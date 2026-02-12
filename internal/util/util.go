@@ -33,3 +33,25 @@ func OpenFolder(path string) error {
 	}
 	return cmd.Start()
 }
+
+func NormalizeDate(d string) string {
+	// If it's already YYYY-MM-DD, return as is
+	if len(d) == 10 && d[4] == '-' && d[7] == '-' {
+		return d
+	}
+	// If it's YYYYMMDD, convert to YYYY-MM-DD
+	if len(d) == 8 {
+		// Check if it's all digits
+		isAllDigits := true
+		for _, r := range d {
+			if r < '0' || r > '9' {
+				isAllDigits = false
+				break
+			}
+		}
+		if isAllDigits {
+			return fmt.Sprintf("%s-%s-%s", d[0:4], d[4:6], d[6:8])
+		}
+	}
+	return d
+}

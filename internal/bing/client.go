@@ -86,7 +86,7 @@ func FetchMeta(apiType, url string) (*Meta, error) {
 		meta := &Meta{
 			Copyright:     img.Copyright,
 			CopyrightLink: img.CopyrightLink,
-			Date:          img.EndDate, // Bing official endDate is usually the display date
+			Date:          util.NormalizeDate(img.EndDate), // Bing official endDate is usually the display date
 			FullStartDate: img.FullStartDate,
 			Hsh:           img.Hsh,
 			Mkt:           "zh-CN",
@@ -108,6 +108,7 @@ func FetchMeta(apiType, url string) (*Meta, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&meta); err != nil {
 		return nil, err
 	}
+	meta.Date = util.NormalizeDate(meta.Date)
 	return &meta, nil
 }
 

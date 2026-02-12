@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -113,6 +114,18 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 	key := fmt.Sprintf("%s_%s", meta.Date, meta.Hsh)
 	dayDir := filepath.Join("data", meta.Date)
 	absDayDir := filepath.Join(store.GetBaseDir(), dayDir)
+
+	// Migration for old date format (YYYYMMDD -> YYYY-MM-DD)
+	if meta.Date == util.NormalizeDate(meta.Date) && len(meta.Date) == 10 {
+		oldDate := strings.ReplaceAll(meta.Date, "-", "")
+		oldDayDir := filepath.Join("data", oldDate)
+		oldAbsDayDir := filepath.Join(store.GetBaseDir(), oldDayDir)
+		if _, err := os.Stat(oldAbsDayDir); err == nil {
+			slog.Info("Migrating old date format directory", "from", oldDayDir, "to", dayDir)
+			os.Rename(oldAbsDayDir, absDayDir)
+		}
+	}
+
 	os.MkdirAll(absDayDir, 0755)
 
 	ext := ".jpg"

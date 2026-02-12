@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"BingPaperDesktop/internal/util"
 )
 
 type HistoryItem struct {
@@ -19,6 +21,16 @@ type HistoryItem struct {
 	ImagePath     string    `json:"image_path"`
 	WatermarkPath string    `json:"watermark_path"`
 	CreatedAt     time.Time `json:"created_at"`
+}
+
+func (item *HistoryItem) Normalize() {
+	item.Date = util.NormalizeDate(item.Date)
+	// Key format is usually "YYYYMMDD_hash" or "YYYY-MM-DD_hash"
+	parts := strings.Split(item.Key, "_")
+	if len(parts) == 2 {
+		parts[0] = util.NormalizeDate(parts[0])
+		item.Key = strings.Join(parts, "_")
+	}
 }
 
 type Index struct {
@@ -47,6 +59,9 @@ func LoadIndex() (Index, error) {
 	if err := json.Unmarshal(data, &idx); err != nil {
 		return Index{}, err
 	}
+	for i := range idx.Items {
+		idx.Items[i].Normalize()
+	}
 	return idx, nil
 }
 
@@ -62,6 +77,7 @@ func SaveIndex(idx Index) error {
 }
 
 func AddToHistory(item HistoryItem) error {
+	item.Normalize()
 	idx, err := LoadIndex()
 	if err != nil {
 		return err
