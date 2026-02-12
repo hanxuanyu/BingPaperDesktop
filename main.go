@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"embed"
-	"golang.org/x/image/draw"
 	"image"
 	"image/png"
 	"io"
@@ -13,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"golang.org/x/image/draw"
 
 	"BingPaperDesktop/internal/app"
 	"BingPaperDesktop/internal/store"
@@ -86,7 +87,49 @@ func main() {
 
 	// Define tray initialization
 	onReady := func() {
-		slog.Info("Systray onReady")
+		systray.CreateMenu()
+		slog.Info("Systray onReady start")
+
+		// 显式设置点击回调以进行诊断
+		systray.SetOnClick(func(menu systray.IMenu) {
+			slog.Info("Tray: Left click triggered")
+		})
+		systray.SetOnRClick(func(menu systray.IMenu) {
+			slog.Info("Tray: Right click triggered")
+		})
+
+		slog.Info("Adding tray menu items")
+		mShow := systray.AddMenuItem("显示界面", "显示界面")
+		mShow.Click(func() {
+			go func() {
+				slog.Info("Tray menu: Show clicked")
+				ctx := appInstance.GetContext()
+				if ctx != nil {
+					wruntime.WindowShow(ctx)
+				}
+			}()
+		})
+		mFetch := systray.AddMenuItem("立即刷新壁纸", "立即获取并设置今日壁纸")
+		mFetch.Click(func() {
+			go func() {
+				slog.Info("Tray menu: Fetch clicked")
+				appInstance.FetchToday(0, 0, 1.0)
+			}()
+		})
+		systray.AddSeparator()
+		mQuit := systray.AddMenuItem("退出程序", "彻底退出")
+		mQuit.Click(func() {
+			go func() {
+				slog.Info("Tray menu: Quit clicked")
+				ctx := appInstance.GetContext()
+				if ctx != nil {
+					wruntime.Quit(ctx)
+				} else {
+					os.Exit(0)
+				}
+			}()
+		})
+
 		if runtime.GOOS == "windows" {
 			systray.SetIcon(appIconIco)
 		} else if runtime.GOOS == "darwin" {
@@ -99,28 +142,7 @@ func main() {
 			systray.SetIcon(appIcon)
 		}
 		systray.SetTooltip("BingPaperDesktop")
-
-		mShow := systray.AddMenuItem("显示界面", "显示界面")
-		mShow.Click(func() {
-			ctx := appInstance.GetContext()
-			if ctx != nil {
-				wruntime.WindowShow(ctx)
-			}
-		})
-		mFetch := systray.AddMenuItem("立即刷新壁纸", "立即获取并设置今日壁纸")
-		mFetch.Click(func() {
-			appInstance.FetchToday(0, 0, 1.0)
-		})
-		systray.AddSeparator()
-		mQuit := systray.AddMenuItem("退出程序", "彻底退出")
-		mQuit.Click(func() {
-			ctx := appInstance.GetContext()
-			if ctx != nil {
-				wruntime.Quit(ctx)
-			} else {
-				os.Exit(0)
-			}
-		})
+		slog.Info("Systray onReady complete")
 	}
 
 	var trayStart, trayEnd func()
