@@ -30,10 +30,12 @@ import {
   ClearHistory, 
   GetImageDataURL,
   OpenDataDir,
+  OpenBaseDir,
   OpenLogsDir,
   CleanupByRetainDays,
   GetWallpaperSupport,
   SubmitWatermark,
+  ResetApplication,
   Quit
 } from '../wailsjs/go/app/App';
 import { store } from '../wailsjs/go/models';
@@ -74,6 +76,8 @@ function App() {
   const [history, setHistory] = useState<store.HistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [wallpaperSupport, setWallpaperSupport] = useState<any>(true);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const isManualFetching = useRef(false);
 
   // Load configuration
@@ -279,11 +283,14 @@ function App() {
     }
   };
 
-  const handleSaveConfig = async (newCfg: store.Config) => {
+  const handleSaveConfig = async (newCfg: store.Config, closeDialog = false) => {
     try {
       await SaveConfig(newCfg);
       setConfig(newCfg);
       toast.success('配置已保存');
+      if (closeDialog) {
+        setIsSettingsOpen(false);
+      }
     } catch (err) {
       toast.error('保存配置失败: ' + err);
     }
@@ -333,9 +340,31 @@ function App() {
       }
       const count = await CleanupByRetainDays(days);
       loadHistory();
-      toast.info(`清理完成，删除了 ${count} 条过旧记录`);
+      toast.success(`清理完成，已删除 ${count} 条历史记录`);
     } catch (err) {
       toast.error('清理失败: ' + err);
+    }
+  };
+
+  const onResetConfirm = async () => {
+    console.log("Reset confirmed");
+    setIsResetDialogOpen(false);
+    const tid = toast.loading('正在重置应用并清理数据...');
+    try {
+      console.log("Calling ResetApplication...");
+      await ResetApplication();
+      console.log("ResetApplication success");
+      toast.success('应用数据已清空，配置已恢复默认', { id: tid });
+      setIsSettingsOpen(false);
+      // Refresh local state
+      await loadConfig();
+      await loadHistory();
+      setCurrentImage(null);
+      setCurrentImageDataURL('');
+      fetchToday(true);
+    } catch (err) {
+      console.error("ResetApplication error:", err);
+      toast.error('重置失败: ' + err, { id: tid });
     }
   };
 
@@ -425,7 +454,7 @@ function App() {
           </DrawerContent>
         </Drawer>
 
-        <Dialog>
+        <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
           <DialogTrigger asChild>
             <Button variant="ghost" size="icon" className="bg-black/40 backdrop-blur-md border border-white/10 rounded-full hover:bg-black/60 text-white">
               <Settings className="h-5 w-5" />
@@ -436,6 +465,33 @@ function App() {
               <DialogTitle>设置</DialogTitle>
             </DialogHeader>
             <div className="grid gap-6 py-4">
+              <div className="grid gap-2">
+                <Label>API 接口类型</Label>
+                <Select 
+                  value={config?.api_type} 
+                  onValueChange={(val) => {
+                    if (!config) return;
+                    const newUrl = val === 'bing' 
+                      ? 'https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&uhd=1&mkt=zh-CN'
+                      : 'https://bing.coding.icu/api/v1/image/today/meta';
+                    setConfig({ ...config, api_type: val, api_meta_url: newUrl });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="bing">必应官方</SelectItem>
+                    <SelectItem value="custom">BingPaper</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[0.7rem] text-muted-foreground">
+                  {config?.api_type === 'bing' 
+                    ? '官方接口由微软提供，支持获取当日最新的壁纸。' 
+                    : 'BingPaper 接口支持随机获取和获取当日壁纸，并支持多种宽高比（如 9:16 手机竖屏、21:9 超宽屏等）的自动适配。'}
+                </p>
+              </div>
+
               <div className="grid gap-2">
                 <Label>API 地址</Label>
                 <Input 
@@ -484,6 +540,19 @@ function App() {
                 )}
               </div>
 
+              {config?.schedule_mode === 'interval' && (
+                <div className="flex items-center justify-between bg-muted/30 p-2 px-3 rounded-md border border-dashed -mt-2">
+                   <div className="space-y-0.5">
+                     <Label className="text-xs">随机更换历史壁纸</Label>
+                     <p className="text-[0.6rem] text-muted-foreground">每次触发时从历史记录中随机选择一张设置</p>
+                   </div>
+                   <Switch 
+                     checked={config?.random_history || false}
+                     onCheckedChange={(val) => config && setConfig({ ...config, random_history: val })}
+                   />
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label>保留天数 (0=永久)</Label>
@@ -501,40 +570,44 @@ function App() {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-4 border-t pt-4">
-                 <div className={cn("flex items-center justify-between transition-opacity", config?.force_uhd && "opacity-50")}>
-                    <div className="space-y-0.5">
-                      <Label>优先宽高比匹配</Label>
-                      <p className="text-[0.7rem] text-muted-foreground">优先选择比例接近屏幕的分辨率</p>
-                    </div>
-                    <Switch 
-                      disabled={config?.force_uhd}
-                      checked={config?.force_uhd ? false : (config?.prefer_aspect_match || false)}
-                      onCheckedChange={(val) => config && setConfig({ ...config, prefer_aspect_match: val })}
-                    />
-                 </div>
-                 <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label>强制 4K (UHD)</Label>
-                      <p className="text-[0.7rem] text-muted-foreground">忽略比例，存在 UHD 则必选</p>
-                    </div>
-                    <Switch 
-                      checked={config?.force_uhd || false}
-                      onCheckedChange={(val) => config && setConfig({ ...config, force_uhd: val })}
-                    />
-                 </div>
-              </div>
+              {config?.api_type === 'custom' && (
+                <div className="flex flex-col gap-4 border-t pt-4">
+                   <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label>强制 4K (UHD)</Label>
+                        <p className="text-[0.7rem] text-muted-foreground">忽略比例，存在 UHD 则必选</p>
+                      </div>
+                      <Switch 
+                        checked={config?.force_uhd || false}
+                        onCheckedChange={(val) => config && setConfig({ ...config, force_uhd: val })}
+                      />
+                   </div>
+                </div>
+              )}
 
               <div className="flex gap-2 pt-2">
                 <Button variant="secondary" className="flex-1" onClick={() => OpenDataDir()}>数据目录</Button>
                 <Button variant="secondary" className="flex-1" onClick={() => OpenLogsDir()}>日志目录</Button>
+              </div>
+
+              <div className="border-t pt-4">
+                <Button 
+                  variant="outline" 
+                  className="w-full border-destructive text-destructive hover:bg-destructive/10" 
+                  onClick={() => setIsResetDialogOpen(true)}
+                >
+                  重置应用数据与配置
+                </Button>
+                <p className="text-[0.65rem] text-muted-foreground mt-2 text-center">
+                  注意：这将清空所有本地壁纸记录并将设置恢复为默认。
+                </p>
               </div>
             </div>
             <DialogFooter className="flex flex-row justify-between items-center">
               <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => Quit()}>
                 彻底退出应用
               </Button>
-              <Button onClick={() => config && handleSaveConfig(config)}>保存配置</Button>
+              <Button onClick={() => config && handleSaveConfig(config, true)}>保存配置</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -592,6 +665,22 @@ function App() {
           注意: {wallpaperSupport}
         </div>
       )}
+
+      {/* Reset Confirmation Dialog */}
+      <Dialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="text-destructive">确认重置应用？</DialogTitle>
+          </DialogHeader>
+          <div className="py-4 text-sm text-muted-foreground">
+            此操作将物理删除所有已下载的历史壁纸、数据记录并将应用配置恢复为初始默认状态。该过程不可逆，请确认是否继续。
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="ghost" onClick={() => setIsResetDialogOpen(false)}>取消操作</Button>
+            <Button variant="destructive" onClick={onResetConfirm}>确认重置</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
     </TooltipProvider>
   );

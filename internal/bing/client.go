@@ -27,6 +27,22 @@ type Meta struct {
 	Variants      []Variant `json:"variants"`
 }
 
+type BingOfficialResponse struct {
+	Images []struct {
+		StartDate     string `json:"startdate"`
+		FullStartDate string `json:"fullstartdate"`
+		EndDate       string `json:"enddate"`
+		URL           string `json:"url"`
+		URLBase       string `json:"urlbase"`
+		Copyright     string `json:"copyright"`
+		CopyrightLink string `json:"copyrightlink"`
+		Title         string `json:"title"`
+		Quiz          string `json:"quiz"`
+		WP            bool   `json:"wp"`
+		Hsh           string `json:"hsh"`
+	} `json:"images"`
+}
+
 type Variant struct {
 	Format     string `json:"format"`
 	Size       int64  `json:"size"`
@@ -35,7 +51,7 @@ type Variant struct {
 	Variant    string `json:"variant"` // "1920x1080" or "UHD"
 }
 
-func FetchMeta(url string) (*Meta, error) {
+func FetchMeta(apiType, url string) (*Meta, error) {
 	client := &http.Client{Timeout: 15 * time.Second}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -58,6 +74,36 @@ func FetchMeta(url string) (*Meta, error) {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
+	if apiType == "bing" {
+		var official BingOfficialResponse
+		if err := json.NewDecoder(resp.Body).Decode(&official); err != nil {
+			return nil, err
+		}
+		if len(official.Images) == 0 {
+			return nil, fmt.Errorf("no images found in official response")
+		}
+		img := official.Images[0]
+		meta := &Meta{
+			Copyright:     img.Copyright,
+			CopyrightLink: img.CopyrightLink,
+			Date:          img.EndDate, // Bing official endDate is usually the display date
+			FullStartDate: img.FullStartDate,
+			Hsh:           img.Hsh,
+			Mkt:           "zh-CN",
+			Quiz:          img.Quiz,
+			StartDate:     img.StartDate,
+			Title:         img.Title,
+			Variants: []Variant{
+				{
+					Variant: "UHD",
+					URL:     "https://www.bing.com" + img.URL,
+					Format:  "jpg",
+				},
+			},
+		}
+		return meta, nil
+	}
+
 	var meta Meta
 	if err := json.NewDecoder(resp.Body).Decode(&meta); err != nil {
 		return nil, err
@@ -65,15 +111,13 @@ func FetchMeta(url string) (*Meta, error) {
 	return &meta, nil
 }
 
-func SelectVariant(meta *Meta, screenW, screenH int, forceUHD, preferAspectMatch bool) Variant {
+func SelectVariant(meta *Meta, screenW, screenH int, forceUHD bool) Variant {
 	if forceUHD {
 		for _, v := range meta.Variants {
 			if v.Variant == "UHD" {
 				return v
 			}
 		}
-		// If ForceUHD is requested but no UHD variant found, ignore aspect match as per UI linkage
-		preferAspectMatch = false
 	}
 
 	screenAspect := float64(screenW) / float64(screenH)
@@ -95,28 +139,32 @@ func SelectVariant(meta *Meta, screenW, screenH int, forceUHD, preferAspectMatch
 		infos = append(infos, variantInfo{v, w, h})
 	}
 
-	// 1. Filter by aspect ratio if preferred
+	// 1. Filter by aspect ratio (default)
 	candidates := []variantInfo{}
-	if preferAspectMatch {
-		for _, info := range infos {
-			aspect := float64(info.w) / float64(info.h)
-			diff := math.Abs(aspect - screenAspect)
-			if diff < minAspectDiff {
-				minAspectDiff = diff
-			}
+	for _, info := range infos {
+		aspect := float64(info.w) / float64(info.h)
+		diff := math.Abs(aspect - screenAspect)
+		if diff < minAspectDiff {
+			minAspectDiff = diff
 		}
+	}
 
-		for _, info := range infos {
-			aspect := float64(info.w) / float64(info.h)
-			if math.Abs(aspect-screenAspect) <= minAspectDiff+0.02*screenAspect {
-				candidates = append(candidates, info)
-			}
+	for _, info := range infos {
+		aspect := float64(info.w) / float64(info.h)
+		if math.Abs(aspect-screenAspect) <= minAspectDiff+0.02*screenAspect {
+			candidates = append(candidates, info)
 		}
-	} else {
-		candidates = infos
 	}
 
 	// 2. Select from candidates
+	// Priority 1: UHD among candidates
+	for _, c := range candidates {
+		if c.v.Variant == "UHD" {
+			return c.v
+		}
+	}
+
+	// Priority 2: Larger than screen, pick smallest
 	var largerThanScreen []variantInfo
 	for _, c := range candidates {
 		if c.w >= screenW && c.h >= screenH {
@@ -125,7 +173,6 @@ func SelectVariant(meta *Meta, screenW, screenH int, forceUHD, preferAspectMatch
 	}
 
 	if len(largerThanScreen) > 0 {
-		// Pick smallest that is still larger than screen
 		minPixels := math.MaxFloat64
 		for _, c := range largerThanScreen {
 			pixels := float64(c.w * c.h)
@@ -135,7 +182,7 @@ func SelectVariant(meta *Meta, screenW, screenH int, forceUHD, preferAspectMatch
 			}
 		}
 	} else {
-		// Pick largest among those smaller than screen
+		// Priority 3: Smaller than screen, pick largest
 		maxPixels := -1.0
 		for _, c := range candidates {
 			pixels := float64(c.w * c.h)

@@ -121,8 +121,14 @@ func ClearHistory() error {
 	}
 
 	for _, item := range idx.Items {
+		if item.ImagePath == "" {
+			continue
+		}
 		dir := filepath.Dir(filepath.Join(GetBaseDir(), item.ImagePath))
-		os.RemoveAll(dir)
+		// 只有当路径包含 data 目录时才执行删除，防止误删基础目录
+		if strings.Contains(dir, filepath.Join(GetBaseDir(), "data")) {
+			os.RemoveAll(dir)
+		}
 	}
 
 	return SaveIndex(Index{Items: []HistoryItem{}})

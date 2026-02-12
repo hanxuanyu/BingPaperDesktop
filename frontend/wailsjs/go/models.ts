@@ -40,15 +40,16 @@ export namespace app {
 export namespace store {
 	
 	export class Config {
+	    api_type: string;
 	    api_meta_url: string;
 	    auto_apply: boolean;
 	    overlay_metadata: boolean;
-	    prefer_aspect_match: boolean;
 	    force_uhd: boolean;
 	    schedule_mode: string;
 	    daily_time: string;
 	    interval_minutes: number;
 	    retain_days: number;
+	    random_history: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Config(source);
@@ -56,15 +57,16 @@ export namespace store {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.api_type = source["api_type"];
 	        this.api_meta_url = source["api_meta_url"];
 	        this.auto_apply = source["auto_apply"];
 	        this.overlay_metadata = source["overlay_metadata"];
-	        this.prefer_aspect_match = source["prefer_aspect_match"];
 	        this.force_uhd = source["force_uhd"];
 	        this.schedule_mode = source["schedule_mode"];
 	        this.daily_time = source["daily_time"];
 	        this.interval_minutes = source["interval_minutes"];
 	        this.retain_days = source["retain_days"];
+	        this.random_history = source["random_history"];
 	    }
 	}
 	export class HistoryItem {

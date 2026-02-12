@@ -6,6 +6,10 @@ export function ApplyHistory(arg1, arg2) {
   return window['go']['app']['App']['ApplyHistory'](arg1, arg2);
 }
 
+export function ApplyRandomHistory(arg1) {
+  return window['go']['app']['App']['ApplyRandomHistory'](arg1);
+}
+
 export function ApplyWallpaper(arg1) {
   return window['go']['app']['App']['ApplyWallpaper'](arg1);
 }
@@ -46,6 +50,10 @@ export function ListHistory() {
   return window['go']['app']['App']['ListHistory']();
 }
 
+export function OpenBaseDir() {
+  return window['go']['app']['App']['OpenBaseDir']();
+}
+
 export function OpenDataDir() {
   return window['go']['app']['App']['OpenDataDir']();
 }
@@ -56,6 +64,10 @@ export function OpenLogsDir() {
 
 export function Quit() {
   return window['go']['app']['App']['Quit']();
+}
+
+export function ResetApplication() {
+  return window['go']['app']['App']['ResetApplication']();
 }
 
 export function SaveConfig(arg1) {

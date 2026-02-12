@@ -6,6 +6,8 @@ import {context} from '../models';
 
 export function ApplyHistory(arg1:string,arg2:boolean):Promise<void>;
 
+export function ApplyRandomHistory(arg1:boolean):Promise<void>;
+
 export function ApplyWallpaper(arg1:boolean):Promise<void>;
 
 export function CleanupByRetainDays(arg1:number):Promise<number>;
@@ -26,11 +28,15 @@ export function GetWallpaperSupport():Promise<boolean|string>;
 
 export function ListHistory():Promise<Array<store.HistoryItem>>;
 
+export function OpenBaseDir():Promise<void>;
+
 export function OpenDataDir():Promise<void>;
 
 export function OpenLogsDir():Promise<void>;
 
 export function Quit():Promise<void>;
+
+export function ResetApplication():Promise<void>;
 
 export function SaveConfig(arg1:store.Config):Promise<void>;
 

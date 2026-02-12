@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sync"
@@ -98,12 +99,12 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 
 	slog.Info("FetchToday started", "screen", fmt.Sprintf("%dx%d", realW, realH))
 
-	meta, err := bing.FetchMeta(cfg.ApiMetaUrl)
+	meta, err := bing.FetchMeta(cfg.ApiType, cfg.ApiMetaUrl)
 	if err != nil {
 		return CurrentResult{Error: err.Error()}, err
 	}
 
-	chosen := bing.SelectVariant(meta, realW, realH, cfg.ForceUHD, cfg.PreferAspectMatch)
+	chosen := bing.SelectVariant(meta, realW, realH, cfg.ForceUHD)
 
 	key := fmt.Sprintf("%s_%s", meta.Date, meta.Hsh)
 	dayDir := filepath.Join("data", meta.Date)
@@ -185,8 +186,12 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 
 	if cfg.AutoApply {
 		slog.Info("Auto applying wallpaper")
-		// ApplyWallpaper will call ApplyHistory, which handles the event emission
-		a.ApplyWallpaper(cfg.OverlayMetadata)
+		if cfg.RandomHistory {
+			a.ApplyRandomHistory(cfg.OverlayMetadata)
+		} else {
+			// ApplyWallpaper will call ApplyHistory, which handles the event emission
+			a.ApplyWallpaper(cfg.OverlayMetadata)
+		}
 	} else {
 		// Notify frontend about the new image
 		runtime.EventsEmit(a.ctx, "current-image-changed", item)
@@ -200,6 +205,23 @@ func (a *App) ApplyWallpaper(preferWatermarked bool) error {
 		return fmt.Errorf("no current image to apply")
 	}
 	return a.ApplyHistory(a.lastFetch.Item.Key, preferWatermarked)
+}
+
+func (a *App) ApplyRandomHistory(preferWatermarked bool) error {
+	idx, err := store.LoadIndex()
+	if err != nil {
+		return err
+	}
+	if len(idx.Items) == 0 {
+		return fmt.Errorf("no history items found")
+	}
+
+	source := rand.NewSource(time.Now().UnixNano())
+	r := rand.New(source)
+	target := idx.Items[r.Intn(len(idx.Items))]
+
+	slog.Info("Randomly selected from history", "key", target.Key, "title", target.Title)
+	return a.ApplyHistory(target.Key, preferWatermarked)
 }
 
 func (a *App) ListHistory() ([]store.HistoryItem, error) {
@@ -262,12 +284,60 @@ func (a *App) OpenDataDir() error {
 	return util.OpenFolder(store.GetDataDir())
 }
 
+func (a *App) OpenBaseDir() error {
+	return util.OpenFolder(store.GetBaseDir())
+}
+
 func (a *App) OpenLogsDir() error {
 	return util.OpenFolder(store.GetLogsDir())
 }
 
 func (a *App) GetWallpaperSupport() (bool, string) {
 	return wallpaper.Supported()
+}
+
+func (a *App) ResetApplication() error {
+	slog.Info("!!! AUTOMATIC RESET TRIGGERED !!!")
+	a.sched.Stop()
+
+	base := store.GetBaseDir()
+	dataDir := filepath.Join(base, "data")
+	configFile := filepath.Join(base, "config.json")
+
+	slog.Info("Reset: cleaning up data and config", "dataDir", dataDir, "configFile", configFile)
+
+	// 1. 物理删除数据目录（包含 index.json 和所有图片子目录）
+	if err := os.RemoveAll(dataDir); err != nil {
+		slog.Warn("Reset: failed to remove data directory", "error", err)
+	}
+
+	// 2. 删除配置文件
+	if err := os.Remove(configFile); err != nil && !os.IsNotExist(err) {
+		slog.Warn("Reset: failed to remove config file", "error", err)
+	}
+
+	// 3. 重新初始化存储结构（重建 data 和 logs 目录）
+	if err := store.Init(); err != nil {
+		slog.Error("Reset: store.Init failed", "error", err)
+		return fmt.Errorf("failed to re-initialize storage: %w", err)
+	}
+
+	// 4. 恢复并保存默认配置
+	cfg := store.DefaultConfig()
+	if err := store.SaveConfig(cfg); err != nil {
+		slog.Error("Reset: saving default config failed", "error", err)
+		return fmt.Errorf("failed to save default config: %w", err)
+	}
+
+	// 5. 同步调度器状态
+	a.sched.Update(cfg.ScheduleMode, cfg.DailyTime, cfg.IntervalMinutes)
+	a.sched.Start()
+
+	// 6. 清理内存状态
+	a.lastFetch = nil
+
+	slog.Info("!!! AUTOMATIC RESET COMPLETED !!!")
+	return nil
 }
 
 func (a *App) Quit() {

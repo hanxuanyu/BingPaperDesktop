@@ -11,15 +11,16 @@ import (
 )
 
 type Config struct {
-	ApiMetaUrl        string `json:"api_meta_url"`
-	AutoApply         bool   `json:"auto_apply"`
-	OverlayMetadata   bool   `json:"overlay_metadata"`
-	PreferAspectMatch bool   `json:"prefer_aspect_match"`
-	ForceUHD          bool   `json:"force_uhd"`
-	ScheduleMode      string `json:"schedule_mode"` // "off" | "daily" | "interval"
-	DailyTime         string `json:"daily_time"`
-	IntervalMinutes   int    `json:"interval_minutes"`
-	RetainDays        int    `json:"retain_days"`
+	ApiType         string `json:"api_type"` // "custom" | "bing"
+	ApiMetaUrl      string `json:"api_meta_url"`
+	AutoApply       bool   `json:"auto_apply"`
+	OverlayMetadata bool   `json:"overlay_metadata"`
+	ForceUHD        bool   `json:"force_uhd"`
+	ScheduleMode    string `json:"schedule_mode"` // "off" | "daily" | "interval"
+	DailyTime       string `json:"daily_time"`
+	IntervalMinutes int    `json:"interval_minutes"`
+	RetainDays      int    `json:"retain_days"`
+	RandomHistory   bool   `json:"random_history"`
 }
 
 var (
@@ -90,15 +91,16 @@ func GetLogsDir() string {
 
 func DefaultConfig() Config {
 	return Config{
-		ApiMetaUrl:        "https://bing.coding.icu/api/v1/image/today/meta",
-		AutoApply:         false,
-		OverlayMetadata:   false,
-		PreferAspectMatch: true,
-		ForceUHD:          false,
-		ScheduleMode:      "daily",
-		DailyTime:         "08:30",
-		IntervalMinutes:   60,
-		RetainDays:        0,
+		ApiType:         "bing",
+		ApiMetaUrl:      "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&uhd=1&mkt=zh-CN",
+		AutoApply:       false,
+		OverlayMetadata: false,
+		ForceUHD:        false,
+		ScheduleMode:    "daily",
+		DailyTime:       "08:30",
+		IntervalMinutes: 60,
+		RetainDays:      0,
+		RandomHistory:   false,
 	}
 }
 
