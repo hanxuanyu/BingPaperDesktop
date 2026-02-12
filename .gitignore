@@ -1,0 +1,84 @@
+# =========================
+# Go 常用 .gitignore
+# =========================
+
+# 编译产物 / 可执行文件
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.a
+*.o
+*.out
+*.test
+*.prof
+*.pprof
+*.cover
+*.cov
+*.trace
+
+# Go workspace / 依赖缓存（本地开发常见，不建议入库）
+/bin/
+/pkg/
+/dist/
+/build/
+/out/
+
+# Go build cache（通常不需要忽略；如你有需要可开启）
+# /tmp/
+# /cache/
+
+# 调试/日志/临时文件
+*.log
+*.tmp
+*.swp
+*.swo
+*.bak
+*.old
+*.pid
+
+# 运行时数据/本地数据
+*.db
+*.sqlite
+*.sqlite3
+data/
+storage/
+tmp/
+
+# 环境变量与配置（按需：如果你会提交示例配置，建议仅忽略真实配置文件）
+.env
+.env.*
+!.env.example
+config.local.*
+*.local.yaml
+*.local.yml
+*.local.json
+
+# Go 测试覆盖率
+coverage.out
+cover.out
+
+# vendor（Go Modules 通常不提交 vendor；如你需要 vendor 则删除这一行）
+/vendor/
+
+# 工具生成文件
+*.gen.go
+
+# IDE / 编辑器
+.idea/
+.vscode/
+*.code-workspace
+
+# macOS / Windows
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Vim / Emacs
+*~
+\#*\#
+.\#*
+
+# GoLand/IntelliJ
+*.iml
