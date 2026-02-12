@@ -90,24 +90,36 @@ func main() {
 		systray.CreateMenu()
 		slog.Info("Systray onReady start")
 
-		// 显式设置点击回调以进行诊断
-		systray.SetOnClick(func(menu systray.IMenu) {
-			slog.Info("Tray: Left click triggered")
-		})
-		systray.SetOnRClick(func(menu systray.IMenu) {
-			slog.Info("Tray: Right click triggered")
-		})
-
-		slog.Info("Adding tray menu items")
-		mShow := systray.AddMenuItem("显示界面", "显示界面")
-		mShow.Click(func() {
+		showWindow := func() {
 			go func() {
-				slog.Info("Tray menu: Show clicked")
 				ctx := appInstance.GetContext()
 				if ctx != nil {
 					wruntime.WindowShow(ctx)
 				}
 			}()
+		}
+
+		// 显式设置点击回调以进行诊断
+		systray.SetOnClick(func(menu systray.IMenu) {
+			slog.Info("Tray: Left click triggered")
+			if runtime.GOOS == "darwin" {
+				menu.ShowMenu()
+			}
+		})
+		systray.SetOnRClick(func(menu systray.IMenu) {
+			slog.Info("Tray: Right click triggered")
+			menu.ShowMenu()
+		})
+		systray.SetOnDClick(func(menu systray.IMenu) {
+			slog.Info("Tray: Double click triggered")
+			showWindow()
+		})
+
+		slog.Info("Adding tray menu items")
+		mShow := systray.AddMenuItem("显示界面", "显示界面")
+		mShow.Click(func() {
+			slog.Info("Tray menu: Show clicked")
+			showWindow()
 		})
 		mFetch := systray.AddMenuItem("立即刷新壁纸", "立即获取并设置今日壁纸")
 		mFetch.Click(func() {

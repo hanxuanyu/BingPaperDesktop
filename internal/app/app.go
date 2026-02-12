@@ -99,7 +99,11 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 
 	slog.Info("FetchToday started", "screen", fmt.Sprintf("%dx%d", realW, realH))
 
-	meta, err := bing.FetchMeta(cfg.ApiType, cfg.ApiMetaUrl)
+	apiUrl := cfg.BingApiUrl
+	if cfg.ApiType == "custom" {
+		apiUrl = cfg.CustomApiUrl
+	}
+	meta, err := bing.FetchMeta(cfg.ApiType, apiUrl)
 	if err != nil {
 		return CurrentResult{Error: err.Error()}, err
 	}

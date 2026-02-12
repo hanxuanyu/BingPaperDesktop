@@ -434,23 +434,23 @@ function App() {
                 </Button>
               </div>
             </DrawerHeader>
-            <ScrollArea className="flex-1 p-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-12">
-                {history.map((item) => (
-                  <HistoryItemCard 
-                    key={item.key} 
-                    item={item} 
-                    onApply={() => handleApplyHistory(item)}
-                    onDelete={() => handleDeleteHistory(item.key)}
-                  />
-                ))}
-                {history.length === 0 && (
-                  <div className="col-span-full py-20 text-center text-muted-foreground font-light">
-                    暂无历史记录
-                  </div>
-                )}
-              </div>
-            </ScrollArea>
+            <div className="flex-1 min-h-0 overflow-y-auto">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-4 pb-12">
+                  {history.map((item) => (
+                    <HistoryItemCard 
+                      key={item.key} 
+                      item={item} 
+                      onApply={() => handleApplyHistory(item)}
+                      onDelete={() => handleDeleteHistory(item.key)}
+                    />
+                  ))}
+                  {history.length === 0 && (
+                    <div className="col-span-full py-20 text-center text-muted-foreground font-light">
+                      暂无历史记录
+                    </div>
+                  )}
+                </div>
+            </div>
           </DrawerContent>
         </Drawer>
 
@@ -460,154 +460,194 @@ function App() {
               <Settings className="h-5 w-5" />
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle>设置</DialogTitle>
+          <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-hidden p-0 gap-0">
+            <DialogHeader className="p-6 pb-2 shrink-0">
+              <DialogTitle className="text-xl">应用设置</DialogTitle>
             </DialogHeader>
-            <div className="grid gap-6 py-4">
-              <div className="grid gap-2">
-                <Label>API 接口类型</Label>
-                <Select 
-                  value={config?.api_type} 
-                  onValueChange={(val) => {
-                    if (!config) return;
-                    const newUrl = val === 'bing' 
-                      ? 'https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&uhd=1&mkt=zh-CN'
-                      : 'https://bing.coding.icu/api/v1/image/today/meta';
-                    setConfig({ ...config, api_type: val, api_meta_url: newUrl });
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="bing">必应官方</SelectItem>
-                    <SelectItem value="custom">BingPaper</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-[0.7rem] text-muted-foreground">
-                  {config?.api_type === 'bing' 
-                    ? '官方接口由微软提供，支持获取当日最新的壁纸。' 
-                    : 'BingPaper 接口支持随机获取和获取当日壁纸，并支持多种宽高比（如 9:16 手机竖屏、21:9 超宽屏等）的自动适配。'}
-                </p>
-              </div>
-
-              <div className="grid gap-2">
-                <Label>API 地址</Label>
-                <Input 
-                  value={config?.api_meta_url || ''} 
-                  onChange={(e) => config && setConfig({ ...config, api_meta_url: e.target.value })}
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>调度模式</Label>
-                  <Select 
-                    value={config?.schedule_mode} 
-                    onValueChange={(val) => config && setConfig({ ...config, schedule_mode: val })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="off">禁用</SelectItem>
-                      <SelectItem value="daily">每日固定时间</SelectItem>
-                      <SelectItem value="interval">固定间隔</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {config?.schedule_mode === 'daily' && (
-                  <div className="grid gap-2">
-                    <Label>触发时间</Label>
-                    <Input 
-                      type="time" 
-                      value={config?.daily_time} 
-                      onChange={(e) => setConfig({ ...config, daily_time: e.target.value })}
-                    />
-                  </div>
-                )}
-                {config?.schedule_mode === 'interval' && (
-                  <div className="grid gap-2">
-                    <Label>间隔 (分钟, ≥15)</Label>
-                    <Input 
-                      type="number" 
-                      min={15}
-                      value={config?.interval_minutes} 
-                      onChange={(e) => setConfig({ ...config, interval_minutes: parseInt(e.target.value) })}
-                    />
-                  </div>
-                )}
-              </div>
-
-              {config?.schedule_mode === 'interval' && (
-                <div className="flex items-center justify-between bg-muted/30 p-2 px-3 rounded-md border border-dashed -mt-2">
-                   <div className="space-y-0.5">
-                     <Label className="text-xs">随机更换历史壁纸</Label>
-                     <p className="text-[0.6rem] text-muted-foreground">每次触发时从历史记录中随机选择一张设置</p>
-                   </div>
-                   <Switch 
-                     checked={config?.random_history || false}
-                     onCheckedChange={(val) => config && setConfig({ ...config, random_history: val })}
-                   />
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>保留天数 (0=永久)</Label>
-                  <Input 
-                    type="number" 
-                    min={0}
-                    value={config?.retain_days} 
-                    onChange={(e) => config && setConfig({ ...config, retain_days: parseInt(e.target.value) })}
-                  />
-                </div>
-                <div className="flex flex-col justify-end">
-                  <Button variant="outline" size="sm" onClick={handleCleanup}>
-                    立即执行清理
-                  </Button>
-                </div>
-              </div>
-
-              {config?.api_type === 'custom' && (
-                <div className="flex flex-col gap-4 border-t pt-4">
-                   <div className="flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <Label>强制 4K (UHD)</Label>
-                        <p className="text-[0.7rem] text-muted-foreground">忽略比例，存在 UHD 则必选</p>
+            <div className="flex-1 min-h-0 overflow-y-auto">
+                <div className="space-y-8 py-4 px-6 pb-12">
+                  {/* API Section */}
+                  <section className="space-y-4">
+                    <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">接口设置</h3>
+                    <div className="grid gap-6 rounded-lg border p-4 bg-muted/20">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-1">
+                          <Label className="text-base">API 接口类型</Label>
+                          <p className="text-xs text-muted-foreground">
+                            {config?.api_type === 'bing' 
+                              ? '官方接口由微软提供，支持获取当日最新的壁纸。' 
+                              : 'BingPaper 接口支持随机获取和获取当日壁纸，并支持多种宽高比自适应。'}
+                          </p>
+                        </div>
+                        <Select 
+                          value={config?.api_type} 
+                          onValueChange={(val) => {
+                            if (!config) return;
+                            setConfig({ ...config, api_type: val });
+                          }}
+                        >
+                          <SelectTrigger className="w-[180px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="bing">必应官方</SelectItem>
+                            <SelectItem value="custom">BingPaper</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
-                      <Switch 
-                        checked={config?.force_uhd || false}
-                        onCheckedChange={(val) => config && setConfig({ ...config, force_uhd: val })}
-                      />
-                   </div>
+
+                      <div className="space-y-2">
+                        <Label>API 地址</Label>
+                        <Input 
+                          className="font-mono text-xs"
+                          value={config?.api_type === 'bing' ? (config?.bing_api_url || '') : (config?.custom_api_url || '')} 
+                          onChange={(e) => {
+                            if (!config) return;
+                            const val = e.target.value;
+                            if (config.api_type === 'bing') {
+                              setConfig({ ...config, bing_api_url: val });
+                            } else {
+                              setConfig({ ...config, custom_api_url: val });
+                            }
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* Automation Section */}
+                  <section className="space-y-4">
+                    <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">自动调度</h3>
+                    <div className="grid gap-6 rounded-lg border p-4 bg-muted/20">
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <Label className="text-base">调度模式</Label>
+                          <p className="text-xs text-muted-foreground">设置壁纸自动更新的频率</p>
+                        </div>
+                        <Select 
+                          value={config?.schedule_mode} 
+                          onValueChange={(val) => config && setConfig({ ...config, schedule_mode: val })}
+                        >
+                          <SelectTrigger className="w-[180px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="off">禁用</SelectItem>
+                            <SelectItem value="daily">每日固定时间</SelectItem>
+                            <SelectItem value="interval">固定间隔</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {config?.schedule_mode === 'daily' && (
+                        <div className="flex items-center justify-between border-t pt-4">
+                          <Label>触发时间</Label>
+                          <Input 
+                            type="time" 
+                            className="w-[180px]"
+                            value={config?.daily_time} 
+                            onChange={(e) => setConfig({ ...config, daily_time: e.target.value })}
+                          />
+                        </div>
+                      )}
+
+                      {config?.schedule_mode === 'interval' && (
+                        <>
+                          <div className="flex items-center justify-between border-t pt-4">
+                            <Label>间隔 (分钟, ≥15)</Label>
+                            <Input 
+                              type="number" 
+                              min={15}
+                              className="w-[180px]"
+                              value={config?.interval_minutes} 
+                              onChange={(e) => setConfig({ ...config, interval_minutes: parseInt(e.target.value) })}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between bg-background/50 p-3 rounded-md border border-dashed">
+                             <div className="space-y-0.5">
+                               <Label className="text-sm">随机更换历史壁纸</Label>
+                               <p className="text-[0.7rem] text-muted-foreground">每次触发时从历史记录中随机选择</p>
+                             </div>
+                             <Switch 
+                               checked={config?.random_history || false}
+                               onCheckedChange={(val) => config && setConfig({ ...config, random_history: val })}
+                             />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </section>
+
+                  {/* Storage & Maintenance */}
+                  <section className="space-y-4">
+                    <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">存储与清理</h3>
+                    <div className="grid gap-6 rounded-lg border p-4 bg-muted/20">
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <Label className="text-base">保留天数</Label>
+                          <p className="text-xs text-muted-foreground">0 为永久保留</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <Input 
+                            type="number" 
+                            min={0}
+                            className="w-[100px]"
+                            value={config?.retain_days} 
+                            onChange={(e) => config && setConfig({ ...config, retain_days: parseInt(e.target.value) })}
+                          />
+                          <Button variant="outline" size="sm" onClick={handleCleanup}>
+                            立即清理
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-3 border-t pt-4">
+                        <Button variant="secondary" className="flex-1 h-9 text-xs" onClick={() => OpenDataDir()}>打开数据目录</Button>
+                        <Button variant="secondary" className="flex-1 h-9 text-xs" onClick={() => OpenLogsDir()}>查看日志目录</Button>
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* Other settings */}
+                  {(config?.api_type === 'custom' || true) && (
+                    <section className="space-y-4">
+                      <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">其他选项</h3>
+                      <div className="grid gap-4 rounded-lg border p-4 bg-muted/20">
+                        {config?.api_type === 'custom' && (
+                          <div className="flex items-center justify-between">
+                             <div className="space-y-0.5">
+                               <Label className="text-base">强制 4K (UHD)</Label>
+                               <p className="text-xs text-muted-foreground">忽略屏幕比例，优先选择 UHD 资源</p>
+                             </div>
+                             <Switch 
+                               checked={config?.force_uhd || false}
+                               onCheckedChange={(val) => config && setConfig({ ...config, force_uhd: val })}
+                             />
+                          </div>
+                        )}
+                        
+                        <div className="pt-2">
+                          <Button 
+                            variant="outline" 
+                            className="w-full border-destructive/50 text-destructive hover:bg-destructive/10 hover:border-destructive" 
+                            onClick={() => setIsResetDialogOpen(true)}
+                          >
+                            重置所有应用数据与配置
+                          </Button>
+                        </div>
+                      </div>
+                    </section>
+                  )}
                 </div>
-              )}
-
-              <div className="flex gap-2 pt-2">
-                <Button variant="secondary" className="flex-1" onClick={() => OpenDataDir()}>数据目录</Button>
-                <Button variant="secondary" className="flex-1" onClick={() => OpenLogsDir()}>日志目录</Button>
-              </div>
-
-              <div className="border-t pt-4">
-                <Button 
-                  variant="outline" 
-                  className="w-full border-destructive text-destructive hover:bg-destructive/10" 
-                  onClick={() => setIsResetDialogOpen(true)}
-                >
-                  重置应用数据与配置
-                </Button>
-                <p className="text-[0.65rem] text-muted-foreground mt-2 text-center">
-                  注意：这将清空所有本地壁纸记录并将设置恢复为默认。
-                </p>
-              </div>
             </div>
-            <DialogFooter className="flex flex-row justify-between items-center">
-              <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => Quit()}>
+            <DialogFooter className="p-6 border-t flex flex-row justify-between items-center bg-muted/10 shrink-0">
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive transition-colors" onClick={() => Quit()}>
                 彻底退出应用
               </Button>
-              <Button onClick={() => config && handleSaveConfig(config, true)}>保存配置</Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setIsSettingsOpen(false)}>取消</Button>
+                <Button onClick={() => config && handleSaveConfig(config, true)}>保存配置</Button>
+              </div>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -692,20 +732,32 @@ function HistoryItemCard({ item, onApply, onDelete }: {
   onDelete: () => void
 }) {
   const [thumb, setThumb] = useState<string>('');
+  const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
     GetImageDataURL(item.image_path).then(setThumb).catch(console.error);
   }, [item.image_path]);
 
   return (
-    <div className="group relative overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm hover:shadow-xl transition-all duration-300 ease-in-out">
-      <div className="aspect-video w-full overflow-hidden bg-muted">
+    <div className="group relative overflow-hidden rounded-xl border bg-card text-card-foreground shadow-md hover:shadow-2xl transition-all duration-500 ease-in-out">
+      <div className="aspect-video w-full overflow-hidden bg-black relative">
         {thumb ? (
-          <img 
-            src={thumb} 
-            alt={item.title} 
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" 
-          />
+          <>
+            <img 
+              src={thumb} 
+              alt={item.title} 
+              onLoad={() => setIsLoaded(true)}
+              className={cn(
+                "h-full w-full object-contain transition-all duration-700 group-hover:scale-105",
+                isLoaded ? "opacity-100 scale-100" : "opacity-0 scale-105"
+              )} 
+            />
+            {!isLoaded && (
+              <div className="absolute inset-0 flex items-center justify-center animate-pulse bg-muted">
+                <ImageIcon className="h-8 w-8 text-muted-foreground/20" />
+              </div>
+            )}
+          </>
         ) : (
           <div className="h-full w-full flex items-center justify-center">
             <ImageIcon className="h-8 w-8 text-muted-foreground/50" />
@@ -714,34 +766,33 @@ function HistoryItemCard({ item, onApply, onDelete }: {
       </div>
       
       {/* Information Overlay on Hover */}
-      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
-        <div className="translate-y-4 group-hover:translate-y-0 transition-transform duration-300">
-          <h4 className="text-sm font-bold text-white mb-1 line-clamp-1">{item.title}</h4>
-          <p className="text-[10px] text-white/70 line-clamp-2 mb-2 leading-tight h-8">
+      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col justify-end p-4">
+        <div className="translate-y-8 group-hover:translate-y-0 transition-transform duration-500 ease-out">
+          <h4 className="text-sm font-bold text-white mb-1.5 line-clamp-1 drop-shadow-sm">{item.title}</h4>
+          <p className="text-[10px] text-white/80 line-clamp-2 mb-3 leading-snug h-8 italic">
             {item.copyright}
           </p>
-          <div className="flex items-center gap-2 mb-3">
-             <span className="text-[9px] bg-white/20 px-1.5 py-0.5 rounded text-white/90 backdrop-blur-sm border border-white/10">
+          <div className="flex items-center gap-2 mb-4">
+             <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-full text-white backdrop-blur-md border border-white/10">
                {item.date}
              </span>
-             <span className="text-[9px] bg-white/20 px-1.5 py-0.5 rounded text-white/90 backdrop-blur-sm border border-white/10">
+             <span className="text-[9px] bg-indigo-500/40 px-2 py-0.5 rounded-full text-white backdrop-blur-md border border-white/10">
                {item.chosen_variant}
              </span>
           </div>
           <div className="flex gap-2">
             <Button 
               size="sm" 
-              variant="secondary" 
-              className="h-8 flex-1 bg-white text-black hover:bg-white/90 text-[11px]" 
+              className="h-9 flex-1 bg-white text-black hover:bg-white/90 text-xs font-medium rounded-lg shadow-lg" 
               onClick={onApply}
             >
-              <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
-              设为壁纸
+              <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+              应用壁纸
             </Button>
             <Button 
               size="sm" 
               variant="destructive" 
-              className="h-8 px-2" 
+              className="h-9 px-3 rounded-lg shadow-lg bg-red-500/80 hover:bg-red-600" 
               onClick={onDelete}
             >
               <Trash2 className="h-3.5 w-3.5" />

@@ -41,6 +41,8 @@ export namespace store {
 	
 	export class Config {
 	    api_type: string;
+	    bing_api_url: string;
+	    custom_api_url: string;
 	    api_meta_url: string;
 	    auto_apply: boolean;
 	    overlay_metadata: boolean;
@@ -58,6 +60,8 @@ export namespace store {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.api_type = source["api_type"];
+	        this.bing_api_url = source["bing_api_url"];
+	        this.custom_api_url = source["custom_api_url"];
 	        this.api_meta_url = source["api_meta_url"];
 	        this.auto_apply = source["auto_apply"];
 	        this.overlay_metadata = source["overlay_metadata"];

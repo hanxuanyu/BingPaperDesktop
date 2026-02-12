@@ -12,7 +12,9 @@ import (
 
 type Config struct {
 	ApiType         string `json:"api_type"` // "custom" | "bing"
-	ApiMetaUrl      string `json:"api_meta_url"`
+	BingApiUrl      string `json:"bing_api_url"`
+	CustomApiUrl    string `json:"custom_api_url"`
+	ApiMetaUrl      string `json:"api_meta_url"` // Deprecated, kept for compatibility
 	AutoApply       bool   `json:"auto_apply"`
 	OverlayMetadata bool   `json:"overlay_metadata"`
 	ForceUHD        bool   `json:"force_uhd"`
@@ -89,10 +91,17 @@ func GetLogsDir() string {
 	return filepath.Join(baseDir, "logs")
 }
 
+const (
+	DefaultBingUrl   = "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&uhd=1&mkt=zh-CN"
+	DefaultCustomUrl = "https://bing.coding.icu/api/v1/image/today/meta"
+)
+
 func DefaultConfig() Config {
 	return Config{
 		ApiType:         "bing",
-		ApiMetaUrl:      "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&uhd=1&mkt=zh-CN",
+		BingApiUrl:      DefaultBingUrl,
+		CustomApiUrl:    DefaultCustomUrl,
+		ApiMetaUrl:      DefaultBingUrl,
 		AutoApply:       false,
 		OverlayMetadata: false,
 		ForceUHD:        false,
@@ -126,6 +135,33 @@ func LoadConfig() (Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return Config{}, err
 	}
+
+	// Migration for older versions
+	migrated := false
+	if cfg.BingApiUrl == "" {
+		if cfg.ApiType == "bing" && cfg.ApiMetaUrl != "" {
+			cfg.BingApiUrl = cfg.ApiMetaUrl
+		} else {
+			cfg.BingApiUrl = DefaultBingUrl
+		}
+		migrated = true
+	}
+	if cfg.CustomApiUrl == "" {
+		if cfg.ApiType == "custom" && cfg.ApiMetaUrl != "" {
+			cfg.CustomApiUrl = cfg.ApiMetaUrl
+		} else {
+			cfg.CustomApiUrl = DefaultCustomUrl
+		}
+		migrated = true
+	}
+
+	if migrated {
+		// Save migrated config to avoid re-migration
+		go func(c Config) {
+			SaveConfig(c)
+		}(cfg)
+	}
+
 	return cfg, nil
 }
 
