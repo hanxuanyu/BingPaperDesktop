@@ -7,17 +7,26 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"BingPaperDesktop/internal/app"
 	"BingPaperDesktop/internal/store"
 
+	"github.com/energye/systray"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
+
+//go:embed frontend/src/assets/images/appicon.png
+var appIcon []byte
+
+//go:embed build/windows/icon.ico
+var appIconIco []byte
 
 func initLogger() {
 	logPath := filepath.Join(store.GetLogsDir(), "app.log")
@@ -44,6 +53,41 @@ func main() {
 	// Create an instance of the app structure
 	appInstance := app.NewApp()
 
+	// Create a system tray menu
+	go func() {
+		systray.Run(func() {
+			if runtime.GOOS == "windows" {
+				systray.SetIcon(appIconIco)
+			} else {
+				systray.SetIcon(appIcon)
+			}
+			systray.SetTooltip("BingPaperDesktop")
+
+			mShow := systray.AddMenuItem("显示界面", "显示界面")
+			mShow.Click(func() {
+				ctx := appInstance.GetContext()
+				if ctx != nil {
+					wruntime.WindowShow(ctx)
+				}
+			})
+			mFetch := systray.AddMenuItem("立即刷新壁纸", "立即获取并设置今日壁纸")
+			mFetch.Click(func() {
+				// Get screen dimensions from Wails if possible, otherwise use defaults
+				appInstance.FetchToday(0, 0, 1.0)
+			})
+			systray.AddSeparator()
+			mQuit := systray.AddMenuItem("退出程序", "彻底退出")
+			mQuit.Click(func() {
+				ctx := appInstance.GetContext()
+				if ctx != nil {
+					wruntime.Quit(ctx)
+				} else {
+					os.Exit(0)
+				}
+			})
+		}, nil)
+	}()
+
 	// Create application with options
 	err := wails.Run(&options.App{
 		Title:  "BingPaperDesktop",
@@ -57,6 +101,7 @@ func main() {
 		Bind: []interface{}{
 			appInstance,
 		},
+		HideWindowOnClose: true,
 	})
 
 	if err != nil {

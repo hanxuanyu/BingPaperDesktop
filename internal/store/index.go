@@ -2,9 +2,11 @@ package store
 
 import (
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -68,6 +70,8 @@ func AddToHistory(item HistoryItem) error {
 	// Dedup
 	for i, existing := range idx.Items {
 		if existing.Key == item.Key {
+			// Keep original CreatedAt to avoid resetting retention timer
+			item.CreatedAt = existing.CreatedAt
 			idx.Items[i] = item
 			return SaveIndex(idx)
 		}
@@ -89,18 +93,19 @@ func DeleteFromHistory(key string) error {
 	}
 
 	newItems := []HistoryItem{}
-	var itemToDelete *HistoryItem
+	var pathToDelete string
 	for _, item := range idx.Items {
 		if item.Key == key {
-			itemToDelete = &item
+			pathToDelete = item.ImagePath
 			continue
 		}
 		newItems = append(newItems, item)
 	}
 
-	if itemToDelete != nil {
+	if pathToDelete != "" {
 		// Delete directory
-		dir := filepath.Dir(filepath.Join(GetBaseDir(), itemToDelete.ImagePath))
+		dir := filepath.Dir(filepath.Join(GetBaseDir(), pathToDelete))
+		slog.Info("Deleting history directory", "dir", dir)
 		os.RemoveAll(dir)
 		idx.Items = newItems
 		return SaveIndex(idx)
@@ -133,14 +138,39 @@ func CleanupByRetainDays(days int) (int, error) {
 		return 0, err
 	}
 
-	threshold := time.Now().AddDate(0, 0, -days)
+	now := time.Now()
+	threshold := now.AddDate(0, 0, -days)
+	slog.Info("Starting cleanup", "days", days, "threshold", threshold.Format("2006-01-02"))
+
 	newItems := []HistoryItem{}
 	deletedCount := 0
+	deletedDirs := make(map[string]bool)
 
 	for _, item := range idx.Items {
-		if item.CreatedAt.Before(threshold) {
-			dir := filepath.Dir(filepath.Join(GetBaseDir(), item.ImagePath))
-			os.RemoveAll(dir)
+		shouldDelete := false
+		itemDate, err := time.ParseInLocation("2006-01-02", item.Date, time.Local)
+		if err == nil {
+			// Compare using image date
+			if itemDate.Before(time.Date(threshold.Year(), threshold.Month(), threshold.Day(), 0, 0, 0, 0, time.Local)) {
+				shouldDelete = true
+			}
+		} else {
+			// Fallback to CreatedAt if date parsing fails
+			if item.CreatedAt.Before(threshold) {
+				shouldDelete = true
+			}
+		}
+
+		if shouldDelete {
+			if item.ImagePath != "" {
+				dir := filepath.Dir(filepath.Join(GetBaseDir(), item.ImagePath))
+				// Ensure we are only deleting within data directory
+				if !deletedDirs[dir] && strings.Contains(dir, filepath.Join(GetBaseDir(), "data")) {
+					slog.Info("Cleaning up old wallpaper directory", "dir", dir, "itemDate", item.Date)
+					os.RemoveAll(dir)
+					deletedDirs[dir] = true
+				}
+			}
 			deletedCount++
 			continue
 		}
@@ -152,6 +182,9 @@ func CleanupByRetainDays(days int) (int, error) {
 		if err := SaveIndex(idx); err != nil {
 			return deletedCount, err
 		}
+		slog.Info("Cleanup completed", "deletedCount", deletedCount)
+	} else {
+		slog.Info("No records found to clean up")
 	}
 
 	return deletedCount, nil

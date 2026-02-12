@@ -72,6 +72,8 @@ func SelectVariant(meta *Meta, screenW, screenH int, forceUHD, preferAspectMatch
 				return v
 			}
 		}
+		// If ForceUHD is requested but no UHD variant found, ignore aspect match as per UI linkage
+		preferAspectMatch = false
 	}
 
 	screenAspect := float64(screenW) / float64(screenH)

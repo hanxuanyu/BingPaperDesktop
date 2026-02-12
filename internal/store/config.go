@@ -78,7 +78,7 @@ func DefaultConfig() Config {
 		ForceUHD:          false,
 		ScheduleMode:      "daily",
 		DailyTime:         "08:30",
-		IntervalMinutes:   0,
+		IntervalMinutes:   60,
 		RetainDays:        0,
 	}
 }

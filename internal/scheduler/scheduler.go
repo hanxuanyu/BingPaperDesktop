@@ -33,6 +33,9 @@ func (s *Scheduler) Update(mode, dailyTime string, intervalMinutes int) {
 
 	s.mode = mode
 	s.dailyTime = dailyTime
+	if intervalMinutes < 1 {
+		intervalMinutes = 1
+	}
 	s.interval = time.Duration(intervalMinutes) * time.Minute
 
 	if s.isRunning {

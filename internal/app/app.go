@@ -3,12 +3,15 @@ package app
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"BingPaperDesktop/internal/bing"
 	"BingPaperDesktop/internal/overlay"
@@ -23,6 +26,15 @@ type App struct {
 	sched     *scheduler.Scheduler
 	fetchMu   sync.Mutex
 	lastFetch *CurrentResult
+	wmChan    chan string
+}
+
+type WatermarkRequest struct {
+	ImagePath string `json:"image_path"`
+	Title     string `json:"title"`
+	Date      string `json:"date"`
+	Copyright string `json:"copyright"`
+	Variant   string `json:"variant"`
 }
 
 type CurrentResult struct {
@@ -32,7 +44,9 @@ type CurrentResult struct {
 }
 
 func NewApp() *App {
-	a := &App{}
+	a := &App{
+		wmChan: make(chan string),
+	}
 	a.sched = scheduler.New(func() error {
 		_, err := a.FetchToday(0, 0, 1.0)
 		return err
@@ -49,11 +63,18 @@ func (a *App) Startup(ctx context.Context) {
 	slog.Info("App startup", "os", filepath.Base(os.Args[0]))
 }
 
+func (a *App) GetContext() context.Context {
+	return a.ctx
+}
+
 func (a *App) GetConfig() (store.Config, error) {
 	return store.LoadConfig()
 }
 
 func (a *App) SaveConfig(cfg store.Config) error {
+	if cfg.IntervalMinutes < 1 {
+		cfg.IntervalMinutes = 1
+	}
 	err := store.SaveConfig(cfg)
 	if err == nil {
 		a.sched.Update(cfg.ScheduleMode, cfg.DailyTime, cfg.IntervalMinutes)
@@ -96,6 +117,12 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 	relImagePath := filepath.Join(dayDir, "original"+ext)
 	absImagePath := filepath.Join(store.GetBaseDir(), relImagePath)
 
+	// Save meta.json
+	metaPath := filepath.Join(absDayDir, "meta.json")
+	if metaData, err := json.MarshalIndent(meta, "", "  "); err == nil {
+		os.WriteFile(metaPath, metaData, 0644)
+	}
+
 	// Download if not exists
 	if _, err := os.Stat(absImagePath); os.IsNotExist(err) {
 		slog.Info("Downloading image", "url", chosen.URL)
@@ -109,10 +136,31 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 		relWatermarkPath = filepath.Join(dayDir, "watermarked"+ext)
 		absWatermarkPath := filepath.Join(store.GetBaseDir(), relWatermarkPath)
 		if _, err := os.Stat(absWatermarkPath); os.IsNotExist(err) {
-			slog.Info("Generating watermark")
-			if err := overlay.AddWatermark(absImagePath, absWatermarkPath, meta.Title, meta.Date, meta.Copyright); err != nil {
-				slog.Error("Watermark failed", "error", err)
-				relWatermarkPath = "" // Fallback to original
+			slog.Info("Requesting frontend to render watermark")
+			dataURL, err := a.GetImageDataURL(relImagePath)
+			if err == nil {
+				runtime.EventsEmit(a.ctx, "render-watermark", WatermarkRequest{
+					ImagePath: dataURL,
+					Title:     meta.Title,
+					Date:      meta.Date,
+					Copyright: meta.Copyright,
+					Variant:   chosen.Variant,
+				})
+
+				// Wait for response with timeout
+				select {
+				case base64Data := <-a.wmChan:
+					if err := overlay.SaveBase64Image(base64Data, absWatermarkPath); err != nil {
+						slog.Error("Failed to save watermark", "error", err)
+						relWatermarkPath = ""
+					}
+				case <-time.After(10 * time.Second):
+					slog.Error("Watermark rendering timeout")
+					relWatermarkPath = ""
+				}
+			} else {
+				slog.Error("Failed to get image data url for watermark", "error", err)
+				relWatermarkPath = ""
 			}
 		}
 	}
@@ -134,6 +182,9 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 
 	res := CurrentResult{Item: item, Success: true}
 	a.lastFetch = &res
+
+	// Notify frontend about the new image
+	runtime.EventsEmit(a.ctx, "current-image-changed", item)
 
 	if cfg.AutoApply {
 		slog.Info("Auto applying wallpaper")
@@ -183,7 +234,15 @@ func (a *App) ApplyHistory(key string, preferWatermarked bool) error {
 
 	absPath := filepath.Join(store.GetBaseDir(), path)
 	slog.Info("Applying wallpaper", "path", absPath)
-	return wallpaper.Set(absPath)
+	if err := wallpaper.Set(absPath); err != nil {
+		return err
+	}
+
+	// Update last fetch and notify frontend
+	a.lastFetch = &CurrentResult{Item: *target, Success: true}
+	runtime.EventsEmit(a.ctx, "current-image-changed", *target)
+
+	return nil
 }
 
 func (a *App) DeleteHistory(key string) error {
@@ -194,9 +253,8 @@ func (a *App) ClearHistory() error {
 	return store.ClearHistory()
 }
 
-func (a *App) CleanupByRetainDays() (int, error) {
-	cfg, _ := store.LoadConfig()
-	return store.CleanupByRetainDays(cfg.RetainDays)
+func (a *App) CleanupByRetainDays(days int) (int, error) {
+	return store.CleanupByRetainDays(days)
 }
 
 func (a *App) OpenDataDir() error {
@@ -209,6 +267,10 @@ func (a *App) OpenLogsDir() error {
 
 func (a *App) GetWallpaperSupport() (bool, string) {
 	return wallpaper.Supported()
+}
+
+func (a *App) Quit() {
+	runtime.Quit(a.ctx)
 }
 
 func (a *App) GetImageDataURL(relPath string) (string, error) {
@@ -228,4 +290,8 @@ func (a *App) GetImageDataURL(relPath string) (string, error) {
 
 	encoded := base64.StdEncoding.EncodeToString(data)
 	return fmt.Sprintf("data:%s;base64,%s", mime, encoded), nil
+}
+
+func (a *App) SubmitWatermark(base64Data string) {
+	a.wmChan <- base64Data
 }

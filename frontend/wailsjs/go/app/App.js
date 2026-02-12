@@ -10,8 +10,8 @@ export function ApplyWallpaper(arg1) {
   return window['go']['app']['App']['ApplyWallpaper'](arg1);
 }
 
-export function CleanupByRetainDays() {
-  return window['go']['app']['App']['CleanupByRetainDays']();
+export function CleanupByRetainDays(arg1) {
+  return window['go']['app']['App']['CleanupByRetainDays'](arg1);
 }
 
 export function ClearHistory() {
@@ -28,6 +28,10 @@ export function FetchToday(arg1, arg2, arg3) {
 
 export function GetConfig() {
   return window['go']['app']['App']['GetConfig']();
+}
+
+export function GetContext() {
+  return window['go']['app']['App']['GetContext']();
 }
 
 export function GetImageDataURL(arg1) {
@@ -50,6 +54,14 @@ export function OpenLogsDir() {
   return window['go']['app']['App']['OpenLogsDir']();
 }
 
+export function Quit() {
+  return window['go']['app']['App']['Quit']();
+}
+
 export function SaveConfig(arg1) {
   return window['go']['app']['App']['SaveConfig'](arg1);
+}
+
+export function SubmitWatermark(arg1) {
+  return window['go']['app']['App']['SubmitWatermark'](arg1);
 }

@@ -1,6 +1,7 @@
 package overlay
 
 import (
+	"encoding/base64"
 	"image"
 	"image/color"
 	"image/draw"
@@ -12,6 +13,20 @@ import (
 	"golang.org/x/image/font/basicfont"
 	"golang.org/x/image/math/fixed"
 )
+
+func SaveBase64Image(base64Data, destPath string) error {
+	// Remove data URL prefix if present
+	if i := strings.Index(base64Data, ","); i != -1 {
+		base64Data = base64Data[i+1:]
+	}
+
+	data, err := base64.StdEncoding.DecodeString(base64Data)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(destPath, data, 0644)
+}
 
 func AddWatermark(srcPath, destPath, title, date, copyright string) error {
 	file, err := os.Open(srcPath)
