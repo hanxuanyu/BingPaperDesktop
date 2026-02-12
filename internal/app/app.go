@@ -183,12 +183,13 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 	res := CurrentResult{Item: item, Success: true}
 	a.lastFetch = &res
 
-	// Notify frontend about the new image
-	runtime.EventsEmit(a.ctx, "current-image-changed", item)
-
 	if cfg.AutoApply {
 		slog.Info("Auto applying wallpaper")
+		// ApplyWallpaper will call ApplyHistory, which handles the event emission
 		a.ApplyWallpaper(cfg.OverlayMetadata)
+	} else {
+		// Notify frontend about the new image
+		runtime.EventsEmit(a.ctx, "current-image-changed", item)
 	}
 
 	return res, nil

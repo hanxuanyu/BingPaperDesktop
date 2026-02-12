@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   RefreshCw, 
   Settings, 
@@ -74,6 +74,7 @@ function App() {
   const [history, setHistory] = useState<store.HistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [wallpaperSupport, setWallpaperSupport] = useState<any>(true);
+  const isManualFetching = useRef(false);
 
   // Load configuration
   const loadConfig = useCallback(async () => {
@@ -96,8 +97,9 @@ function App() {
   }, []);
 
   // Get today's wallpaper
-  const fetchToday = useCallback(async () => {
+  const fetchToday = useCallback(async (silent = false) => {
     setLoading(true);
+    if (!silent) isManualFetching.current = true;
     try {
       const w = window.screen.width * window.devicePixelRatio;
       const h = window.screen.height * window.devicePixelRatio;
@@ -107,7 +109,9 @@ function App() {
       if (result.success) {
         setCurrentImage(result.item);
         loadHistory();
-        toast.success('已获取今日壁纸: ' + result.item.title);
+        if (!silent) {
+          toast.success('已获取今日壁纸: ' + result.item.title);
+        }
       } else {
         toast.error('获取今日壁纸失败: ' + result.error);
       }
@@ -115,6 +119,7 @@ function App() {
       toast.error('请求失败: ' + err);
     } finally {
       setLoading(false);
+      isManualFetching.current = false;
     }
   }, [loadHistory]);
 
@@ -122,15 +127,21 @@ function App() {
   useEffect(() => {
     loadConfig();
     loadHistory();
-    fetchToday();
+    fetchToday(true);
     GetWallpaperSupport().then(setWallpaperSupport);
 
     // Sync current image listener
     const unregisterSync = EventsOn('current-image-changed', (item: store.HistoryItem) => {
       if (item) {
-        setCurrentImage(item);
-        loadHistory();
-        toast.info('壁纸已同步: ' + item.title);
+        setCurrentImage((prev) => {
+          if (prev && prev.key !== item.key && !isManualFetching.current) {
+            toast.info('壁纸已同步: ' + item.title);
+          }
+          if (!prev || prev.key !== item.key) {
+            loadHistory();
+          }
+          return item;
+        });
       }
     });
 
@@ -557,7 +568,7 @@ function App() {
             size="lg" 
             variant="secondary"
             className="rounded-full px-8 shadow-xl hover:scale-105 transition-transform"
-            onClick={fetchToday}
+            onClick={() => fetchToday()}
             disabled={loading}
           >
             <RefreshCw className={cn("h-5 w-5 mr-2", loading && "animate-spin")} />
