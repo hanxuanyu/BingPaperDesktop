@@ -36,9 +36,19 @@ func initLogger() {
 	}
 
 	// MultiWriter to both file and stdout
-	mw := io.MultiWriter(os.Stdout, f)
+	// Use f first to ensure it's written even if stdout fails (common in GUI apps)
+	mw := io.MultiWriter(f, &ignoreErrorWriter{os.Stdout})
 	logger := slog.New(slog.NewTextHandler(mw, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
+}
+
+type ignoreErrorWriter struct {
+	w io.Writer
+}
+
+func (iw *ignoreErrorWriter) Write(p []byte) (n int, err error) {
+	n, _ = iw.w.Write(p)
+	return n, nil
 }
 
 func main() {
@@ -49,6 +59,8 @@ func main() {
 
 	// Initialize logger after store is ready
 	initLogger()
+
+	slog.Info("Log system initialized", "baseDir", store.GetBaseDir(), "logPath", filepath.Join(store.GetLogsDir(), "app.log"))
 
 	// Create an instance of the app structure
 	appInstance := app.NewApp()
