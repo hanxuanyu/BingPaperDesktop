@@ -38,9 +38,32 @@ wails dev
 
 ### 构建正式版本
 
+可以直接使用 Wails CLI 构建：
+
 ```bash
 wails build
 ```
+
+或者使用本项目提供的自动化构建脚本（支持多平台构建）：
+
+- **macOS / Linux**:
+  ```bash
+  ./build.sh
+  ```
+- **Windows (PowerShell)**:
+  ```powershell
+  .\build.ps1
+  ```
+
+构建产物将存放在 `build/bin/` 目录下。
+
+### 安装包分发
+
+本项目支持一键生成各平台的安装包：
+
+- **Windows**: 若系统中安装了 [NSIS](https://nsis.sourceforge.io/)，构建脚本会自动生成 `.exe` 安装程序以及可以直接运行的独立执行文件。
+- **macOS**: 构建脚本会自动将 `.app` 封装为 `.dmg` 镜像（包含 Applications 快捷方式），方便用户拖拽安装。
+- **Linux**: 目前直接分发可执行二进制文件。
 
 ## Linux 支持说明
 
