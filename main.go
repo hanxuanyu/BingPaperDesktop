@@ -1,7 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"embed"
+	"golang.org/x/image/draw"
+	"image"
+	"image/png"
 	"io"
 	"log"
 	"log/slog"
@@ -51,6 +56,20 @@ func (iw *ignoreErrorWriter) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
+func resizeIcon(data []byte, size int) []byte {
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return data
+	}
+	newImg := image.NewRGBA(image.Rect(0, 0, size, size))
+	draw.BiLinear.Scale(newImg, newImg.Bounds(), img, img.Bounds(), draw.Over, nil)
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, newImg); err != nil {
+		return data
+	}
+	return buf.Bytes()
+}
+
 func main() {
 	// Initialize store and portable paths
 	if err := store.Init(); err != nil {
@@ -65,40 +84,53 @@ func main() {
 	// Create an instance of the app structure
 	appInstance := app.NewApp()
 
-	// Create a system tray menu
-	go func() {
-		systray.Run(func() {
-			if runtime.GOOS == "windows" {
-				systray.SetIcon(appIconIco)
-			} else {
-				systray.SetIcon(appIcon)
-			}
-			systray.SetTooltip("BingPaperDesktop")
+	// Define tray initialization
+	onReady := func() {
+		slog.Info("Systray onReady")
+		if runtime.GOOS == "windows" {
+			systray.SetIcon(appIconIco)
+		} else if runtime.GOOS == "darwin" {
+			// macOS 菜单栏图标推荐尺寸为 22x22
+			iconSmall := resizeIcon(appIcon, 22)
+			slog.Info("Setting systray icon (macOS)", "original_len", len(appIcon), "new_len", len(iconSmall))
+			systray.SetTemplateIcon(iconSmall, iconSmall)
+		} else {
+			slog.Info("Setting systray icon", "len", len(appIcon))
+			systray.SetIcon(appIcon)
+		}
+		systray.SetTooltip("BingPaperDesktop")
 
-			mShow := systray.AddMenuItem("显示界面", "显示界面")
-			mShow.Click(func() {
-				ctx := appInstance.GetContext()
-				if ctx != nil {
-					wruntime.WindowShow(ctx)
-				}
-			})
-			mFetch := systray.AddMenuItem("立即刷新壁纸", "立即获取并设置今日壁纸")
-			mFetch.Click(func() {
-				// Get screen dimensions from Wails if possible, otherwise use defaults
-				appInstance.FetchToday(0, 0, 1.0)
-			})
-			systray.AddSeparator()
-			mQuit := systray.AddMenuItem("退出程序", "彻底退出")
-			mQuit.Click(func() {
-				ctx := appInstance.GetContext()
-				if ctx != nil {
-					wruntime.Quit(ctx)
-				} else {
-					os.Exit(0)
-				}
-			})
-		}, nil)
-	}()
+		mShow := systray.AddMenuItem("显示界面", "显示界面")
+		mShow.Click(func() {
+			ctx := appInstance.GetContext()
+			if ctx != nil {
+				wruntime.WindowShow(ctx)
+			}
+		})
+		mFetch := systray.AddMenuItem("立即刷新壁纸", "立即获取并设置今日壁纸")
+		mFetch.Click(func() {
+			appInstance.FetchToday(0, 0, 1.0)
+		})
+		systray.AddSeparator()
+		mQuit := systray.AddMenuItem("退出程序", "彻底退出")
+		mQuit.Click(func() {
+			ctx := appInstance.GetContext()
+			if ctx != nil {
+				wruntime.Quit(ctx)
+			} else {
+				os.Exit(0)
+			}
+		})
+	}
+
+	var trayStart, trayEnd func()
+	if runtime.GOOS == "darwin" {
+		trayStart, trayEnd = systray.RunWithExternalLoop(onReady, nil)
+		slog.Info("Darwin: using RunWithExternalLoop")
+		trayStart()
+	} else {
+		systray.Register(onReady, nil)
+	}
 
 	// Create application with options
 	err := wails.Run(&options.App{
@@ -109,7 +141,16 @@ func main() {
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
-		OnStartup:        appInstance.Startup,
+		OnStartup: func(ctx context.Context) {
+			appInstance.Startup(ctx)
+		},
+		OnShutdown: func(ctx context.Context) {
+			if trayEnd != nil {
+				trayEnd()
+			} else {
+				systray.Quit()
+			}
+		},
 		Bind: []interface{}{
 			appInstance,
 		},

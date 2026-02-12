@@ -34,4 +34,6 @@ export function Quit():Promise<void>;
 
 export function SaveConfig(arg1:store.Config):Promise<void>;
 
+export function Startup(arg1:context.Context):Promise<void>;
+
 export function SubmitWatermark(arg1:string):Promise<void>;

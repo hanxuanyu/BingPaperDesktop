@@ -62,6 +62,10 @@ export function SaveConfig(arg1) {
   return window['go']['app']['App']['SaveConfig'](arg1);
 }
 
+export function Startup(arg1) {
+  return window['go']['app']['App']['Startup'](arg1);
+}
+
 export function SubmitWatermark(arg1) {
   return window['go']['app']['App']['SubmitWatermark'](arg1);
 }

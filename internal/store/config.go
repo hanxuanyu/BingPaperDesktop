@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 )
 
@@ -36,12 +38,29 @@ func Init() error {
 	}
 	baseDir = filepath.Dir(realPath)
 
-	// Check if baseDir is writable
+	// 在 macOS 上，如果运行在 .app 包内，或者当前目录不可写，则切换到用户配置目录
+	// 这是为了防止在只读目录（如 /Applications 或 DMG）下运行时闪退
+	isInsideApp := runtime.GOOS == "darwin" && strings.Contains(baseDir, ".app/Contents/MacOS")
+
+	writable := true
 	testFile := filepath.Join(baseDir, ".write_test")
 	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
-		return fmt.Errorf("directory %s is not writable: %w", baseDir, err)
+		writable = false
+	} else {
+		_ = os.Remove(testFile)
 	}
-	os.Remove(testFile)
+
+	if isInsideApp || !writable {
+		configDir, err := os.UserConfigDir()
+		if err == nil {
+			baseDir = filepath.Join(configDir, "BingPaperDesktop")
+		}
+	}
+
+	// 确保基础目录存在
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		return fmt.Errorf("failed to create base directory %s: %w", baseDir, err)
+	}
 
 	// Ensure directories exist
 	dirs := []string{"data", "logs"}
