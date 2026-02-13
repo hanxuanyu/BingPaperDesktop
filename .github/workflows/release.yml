@@ -23,6 +23,7 @@ jobs:
           - os: ubuntu-latest
             platform: linux/amd64
             artifact: BingPaperDesktop
+            args: -tags webkit2_41
 
     runs-on: ${{ matrix.os }}
     steps:

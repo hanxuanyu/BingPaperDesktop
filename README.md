@@ -1,5 +1,9 @@
 # BingPaperDesktop
 
+[![Build Verification](https://github.com/hanxuanyu/BingPaperDesktop/actions/workflows/verify.yml/badge.svg)](https://github.com/hanxuanyu/BingPaperDesktop/actions/workflows/verify.yml)
+[![Release](https://github.com/hanxuanyu/BingPaperDesktop/actions/workflows/release.yml/badge.svg)](https://github.com/hanxuanyu/BingPaperDesktop/actions/workflows/release.yml)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/hanxuanyu/BingPaperDesktop)](https://github.com/hanxuanyu/BingPaperDesktop/releases)
+
 [English](./README_EN.md) | 简体中文
 
 基于 Wails v2 + Go + React 开发的跨平台 Bing 每日壁纸桌面客户端。它能够自动获取 Bing 每日高清壁纸，并支持壁纸预览、历史记录管理、自动更新以及水印叠加等功能。

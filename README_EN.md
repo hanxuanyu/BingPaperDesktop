@@ -1,5 +1,9 @@
 # BingPaperDesktop
 
+[![Build Verification](https://github.com/hanxuanyu/BingPaperDesktop/actions/workflows/verify.yml/badge.svg)](https://github.com/hanxuanyu/BingPaperDesktop/actions/workflows/verify.yml)
+[![Release](https://github.com/hanxuanyu/BingPaperDesktop/actions/workflows/release.yml/badge.svg)](https://github.com/hanxuanyu/BingPaperDesktop/actions/workflows/release.yml)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/hanxuanyu/BingPaperDesktop)](https://github.com/hanxuanyu/BingPaperDesktop/releases)
+
 English | [简体中文](./README.md)
 
 A cross-platform Bing Daily Wallpaper desktop client developed with Wails v2 + Go + React. It automatically fetches high-definition daily wallpapers from Bing and supports features like previewing, history management, auto-updates, and metadata overlay.

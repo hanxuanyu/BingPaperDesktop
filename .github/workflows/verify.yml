@@ -44,6 +44,6 @@ jobs:
           elif [ "${{ runner.os }}" == "macOS" ]; then
             wails build -platform darwin/universal
           else
-            wails build -platform linux/amd64
+            wails build -platform linux/amd64 -tags webkit2_41
           fi
         shell: bash

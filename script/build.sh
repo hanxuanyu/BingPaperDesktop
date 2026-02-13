@@ -52,7 +52,19 @@ else
 fi
 
 # 2. Build for Linux (amd64)
-build_platform "linux/amd64"
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    # Check if we should use webkit2gtk-4.1 (standard on Ubuntu 24.04+)
+    if pkg-config --exists webkit2gtk-4.1 && ! pkg-config --exists webkit2gtk-4.0; then
+        echo "Detected webkit2gtk-4.1 but not 4.0. Adding -tags webkit2_41..."
+        build_platform "linux/amd64" "-tags webkit2_41"
+    else
+        build_platform "linux/amd64"
+    fi
+else
+    # If not on Linux, we can still cross-compile for Linux but we don't know the target webkit version
+    # Default to standard wails build
+    build_platform "linux/amd64"
+fi
 
 # 3. Build for macOS (Universal) - Only possible on macOS
 if [[ "$OSTYPE" == "darwin"* ]]; then
