@@ -42,6 +42,8 @@ export function ResetApplication():Promise<void>;
 
 export function SaveConfig(arg1:store.Config):Promise<void>;
 
+export function SetupTray(arg1:Array<number>,arg2:Array<number>):Promise<any|any>;
+
 export function Startup(arg1:context.Context):Promise<void>;
 
 export function SubmitWatermark(arg1:string):Promise<void>;

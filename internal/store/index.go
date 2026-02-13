@@ -76,25 +76,30 @@ func SaveIndex(idx Index) error {
 	return os.WriteFile(GetIndexPath(), data, 0644)
 }
 
+// AddToHistory 将新的壁纸条目添加到历史记录中。
+// 如果 key 已存在，则更新现有条目，但保留其原始创建时间。
 func AddToHistory(item HistoryItem) error {
 	item.Normalize()
 	idx, err := LoadIndex()
 	if err != nil {
+		slog.Error("Failed to load index during AddToHistory", "error", err)
 		return err
 	}
 
-	// Dedup
+	// 查找是否已存在相同 Key 的记录（去重）
 	for i, existing := range idx.Items {
 		if existing.Key == item.Key {
-			// Keep original CreatedAt to avoid resetting retention timer
+			slog.Info("Updating existing history item", "key", item.Key)
+			// 保留原始创建时间，以确保清理逻辑（RetainDays）能正确执行
 			item.CreatedAt = existing.CreatedAt
 			idx.Items[i] = item
 			return SaveIndex(idx)
 		}
 	}
 
+	slog.Info("Adding new item to history", "key", item.Key, "title", item.Title)
 	idx.Items = append(idx.Items, item)
-	// Sort by CreatedAt descending
+	// 按创建时间倒序排序（最新的在前）
 	sort.Slice(idx.Items, func(i, j int) bool {
 		return idx.Items[i].CreatedAt.After(idx.Items[j].CreatedAt)
 	})
@@ -102,6 +107,7 @@ func AddToHistory(item HistoryItem) error {
 	return SaveIndex(idx)
 }
 
+// DeleteFromHistory 根据 Key 删除单条历史记录及其关联的文件。
 func DeleteFromHistory(key string) error {
 	idx, err := LoadIndex()
 	if err != nil {
@@ -119,10 +125,12 @@ func DeleteFromHistory(key string) error {
 	}
 
 	if pathToDelete != "" {
-		// Delete directory
+		// 删除图片及其所在目录（整个日期的目录）
 		dir := filepath.Dir(filepath.Join(GetBaseDir(), pathToDelete))
-		slog.Info("Deleting history directory", "dir", dir)
-		os.RemoveAll(dir)
+		slog.Info("Deleting history directory", "key", key, "dir", dir)
+		if err := os.RemoveAll(dir); err != nil {
+			slog.Warn("Failed to remove directory", "dir", dir, "error", err)
+		}
 		idx.Items = newItems
 		return SaveIndex(idx)
 	}

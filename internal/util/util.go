@@ -1,10 +1,13 @@
 package util
 
 import (
+	"bytes"
 	"fmt"
-	"os/exec"
-	"runtime"
+	"image"
+	"image/png"
 	"time"
+
+	"golang.org/x/image/draw"
 )
 
 func Retry(attempts int, sleep time.Duration, f func() error) error {
@@ -19,19 +22,6 @@ func Retry(attempts int, sleep time.Duration, f func() error) error {
 		}
 	}
 	return fmt.Errorf("after %d attempts, last error: %s", attempts, err)
-}
-
-func OpenFolder(path string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("explorer", path)
-	case "darwin":
-		cmd = exec.Command("open", path)
-	default: // Linux
-		cmd = exec.Command("xdg-open", path)
-	}
-	return cmd.Start()
 }
 
 func NormalizeDate(d string) string {
@@ -54,4 +44,18 @@ func NormalizeDate(d string) string {
 		}
 	}
 	return d
+}
+
+func ResizeIcon(data []byte, size int) []byte {
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return data
+	}
+	newImg := image.NewRGBA(image.Rect(0, 0, size, size))
+	draw.BiLinear.Scale(newImg, newImg.Bounds(), img, img.Bounds(), draw.Over, nil)
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, newImg); err != nil {
+		return data
+	}
+	return buf.Bytes()
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"os"
@@ -52,6 +53,7 @@ type Variant struct {
 }
 
 func FetchMeta(apiType, url string) (*Meta, error) {
+	slog.Debug("Fetching meta", "type", apiType, "url", url)
 	client := &http.Client{Timeout: 15 * time.Second}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -86,7 +88,7 @@ func FetchMeta(apiType, url string) (*Meta, error) {
 		meta := &Meta{
 			Copyright:     img.Copyright,
 			CopyrightLink: img.CopyrightLink,
-			Date:          util.NormalizeDate(img.EndDate), // Bing official endDate is usually the display date
+			Date:          util.NormalizeDate(img.EndDate),
 			FullStartDate: img.FullStartDate,
 			Hsh:           img.Hsh,
 			Mkt:           "zh-CN",
@@ -101,6 +103,7 @@ func FetchMeta(apiType, url string) (*Meta, error) {
 				},
 			},
 		}
+		slog.Debug("Fetched meta from Bing official", "title", meta.Title, "date", meta.Date)
 		return meta, nil
 	}
 
@@ -109,6 +112,7 @@ func FetchMeta(apiType, url string) (*Meta, error) {
 		return nil, err
 	}
 	meta.Date = util.NormalizeDate(meta.Date)
+	slog.Debug("Fetched meta from custom API", "title", meta.Title, "date", meta.Date)
 	return &meta, nil
 }
 
@@ -211,6 +215,7 @@ func parseResolution(res string) (int, int) {
 }
 
 func DownloadImage(url, destPath string) error {
+	slog.Info("Downloading image", "url", url, "dest", destPath)
 	tmpPath := destPath + ".part"
 
 	client := &http.Client{Timeout: 30 * time.Second}

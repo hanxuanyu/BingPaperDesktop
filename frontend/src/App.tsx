@@ -266,10 +266,12 @@ function App() {
   // Update background image when currentImage changes
   useEffect(() => {
     if (currentImage) {
-      const path = currentImage.image_path;
+      const path = (config?.overlay_metadata && currentImage.watermark_path) 
+        ? currentImage.watermark_path 
+        : currentImage.image_path;
       GetImageDataURL(path).then(setCurrentImageDataURL).catch(console.error);
     }
-  }, [currentImage]);
+  }, [currentImage, config?.overlay_metadata]);
 
   const handleApplyWallpaper = async () => {
     if (!currentImage) return;

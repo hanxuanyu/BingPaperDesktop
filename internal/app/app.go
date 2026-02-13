@@ -113,13 +113,15 @@ func (a *App) IsAutoStartEnabled() (bool, error) {
 	return util.IsAutoStartEnabled()
 }
 
+// FetchToday 获取今日壁纸并根据配置决定是否应用。
+// 它是程序的核心业务逻辑，由调度器或手动触发。
 func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, error) {
 	a.fetchMu.Lock()
 	defer a.fetchMu.Unlock()
 
 	cfg, _ := store.LoadConfig()
 
-	// Default fallback for resolution
+	// 1. 设置默认分辨率，计算实际像素尺寸
 	if screenW == 0 {
 		screenW = 1920
 		screenH = 1080
@@ -127,36 +129,36 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 	realW := int(float64(screenW) * dpr)
 	realH := int(float64(screenH) * dpr)
 
-	slog.Info("FetchToday started", "screen", fmt.Sprintf("%dx%d", realW, realH))
+	slog.Info("FetchToday started", "screen", fmt.Sprintf("%dx%d", realW, realH), "api", cfg.ApiType)
 
+	// 2. 获取元数据并选择合适的图片变体
 	apiUrl := cfg.BingApiUrl
 	if cfg.ApiType == "custom" {
 		apiUrl = cfg.CustomApiUrl
 	}
 	meta, err := bing.FetchMeta(cfg.ApiType, apiUrl)
 	if err != nil {
+		slog.Error("Failed to fetch meta", "error", err)
 		return CurrentResult{Error: err.Error()}, err
 	}
 
 	chosen := bing.SelectVariant(meta, realW, realH, cfg.ForceUHD)
+	slog.Info("Selected variant", "variant", chosen.Variant, "url", chosen.URL)
 
+	// 3. 准备存储路径
 	key := fmt.Sprintf("%s_%s", meta.Date, meta.Hsh)
 	dayDir := filepath.Join("data", meta.Date)
 	absDayDir := filepath.Join(store.GetBaseDir(), dayDir)
 
-	// Migration for old date format (YYYYMMDD -> YYYY-MM-DD)
-	if meta.Date == util.NormalizeDate(meta.Date) && len(meta.Date) == 10 {
-		oldDate := strings.ReplaceAll(meta.Date, "-", "")
-		oldDayDir := filepath.Join("data", oldDate)
-		oldAbsDayDir := filepath.Join(store.GetBaseDir(), oldDayDir)
-		if _, err := os.Stat(oldAbsDayDir); err == nil {
-			slog.Info("Migrating old date format directory", "from", oldDayDir, "to", dayDir)
-			os.Rename(oldAbsDayDir, absDayDir)
-		}
+	// 旧版本兼容性处理：如果存在旧的目录格式（无短横线），尝试迁移
+	a.migrateOldDataDir(meta.Date, absDayDir)
+
+	if err := os.MkdirAll(absDayDir, 0755); err != nil {
+		slog.Error("Failed to create day directory", "dir", absDayDir, "error", err)
+		return CurrentResult{Error: err.Error()}, err
 	}
 
-	os.MkdirAll(absDayDir, 0755)
-
+	// 4. 下载图片（如果本地不存在）
 	ext := ".jpg"
 	if chosen.Format != "" {
 		ext = "." + chosen.Format
@@ -164,54 +166,24 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 	relImagePath := filepath.Join(dayDir, "original"+ext)
 	absImagePath := filepath.Join(store.GetBaseDir(), relImagePath)
 
-	// Save meta.json
-	metaPath := filepath.Join(absDayDir, "meta.json")
-	if metaData, err := json.MarshalIndent(meta, "", "  "); err == nil {
-		os.WriteFile(metaPath, metaData, 0644)
-	}
+	// 保存元数据以便后续查看
+	a.saveMetaJson(meta, absDayDir)
 
-	// Download if not exists
 	if _, err := os.Stat(absImagePath); os.IsNotExist(err) {
-		slog.Info("Downloading image", "url", chosen.URL)
+		slog.Info("Downloading image", "url", chosen.URL, "dest", absImagePath)
 		if err := bing.DownloadImage(chosen.URL, absImagePath); err != nil {
+			slog.Error("Download failed", "error", err)
 			return CurrentResult{Error: err.Error()}, err
 		}
 	}
 
+	// 5. 处理水印（通过前端渲染）
 	relWatermarkPath := ""
 	if cfg.OverlayMetadata {
-		relWatermarkPath = filepath.Join(dayDir, "watermarked"+ext)
-		absWatermarkPath := filepath.Join(store.GetBaseDir(), relWatermarkPath)
-		if _, err := os.Stat(absWatermarkPath); os.IsNotExist(err) {
-			slog.Info("Requesting frontend to render watermark")
-			dataURL, err := a.GetImageDataURL(relImagePath)
-			if err == nil {
-				runtime.EventsEmit(a.ctx, "render-watermark", WatermarkRequest{
-					ImagePath: dataURL,
-					Title:     meta.Title,
-					Date:      meta.Date,
-					Copyright: meta.Copyright,
-					Variant:   chosen.Variant,
-				})
-
-				// Wait for response with timeout
-				select {
-				case base64Data := <-a.wmChan:
-					if err := overlay.SaveBase64Image(base64Data, absWatermarkPath); err != nil {
-						slog.Error("Failed to save watermark", "error", err)
-						relWatermarkPath = ""
-					}
-				case <-time.After(10 * time.Second):
-					slog.Error("Watermark rendering timeout")
-					relWatermarkPath = ""
-				}
-			} else {
-				slog.Error("Failed to get image data url for watermark", "error", err)
-				relWatermarkPath = ""
-			}
-		}
+		relWatermarkPath = a.ensureWatermark(meta, chosen, dayDir, relImagePath, ext)
 	}
 
+	// 6. 保存到历史记录
 	item := store.HistoryItem{
 		Key:           key,
 		Date:          meta.Date,
@@ -224,26 +196,88 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 	}
 
 	if err := store.AddToHistory(item); err != nil {
-		slog.Error("Save history failed", "error", err)
+		slog.Error("Failed to save history", "key", key, "error", err)
 	}
 
 	res := CurrentResult{Item: item, Success: true}
 	a.lastFetch = &res
 
+	// 7. 根据配置自动应用壁纸
 	if cfg.AutoApply {
-		slog.Info("Auto applying wallpaper")
+		slog.Info("Auto applying wallpaper", "random", cfg.RandomHistory)
 		if cfg.RandomHistory {
 			a.ApplyRandomHistory(cfg.OverlayMetadata)
 		} else {
-			// ApplyWallpaper will call ApplyHistory, which handles the event emission
 			a.ApplyWallpaper(cfg.OverlayMetadata)
 		}
 	} else {
-		// Notify frontend about the new image
+		// 通知前端图片已更新，但未自动应用
 		runtime.EventsEmit(a.ctx, "current-image-changed", item)
 	}
 
-	return res, nil
+	return *a.lastFetch, nil
+}
+
+// migrateOldDataDir 处理旧版本日期格式 (YYYYMMDD) 到新格式 (YYYY-MM-DD) 的迁移
+func (a *App) migrateOldDataDir(newDate, newAbsDayDir string) {
+	if newDate == util.NormalizeDate(newDate) && len(newDate) == 10 {
+		oldDate := strings.ReplaceAll(newDate, "-", "")
+		oldDayDir := filepath.Join("data", oldDate)
+		oldAbsDayDir := filepath.Join(store.GetBaseDir(), oldDayDir)
+		if _, err := os.Stat(oldAbsDayDir); err == nil {
+			slog.Info("Migrating old date format directory", "from", oldDate, "to", newDate)
+			os.Rename(oldAbsDayDir, newAbsDayDir)
+		}
+	}
+}
+
+// saveMetaJson 将元数据保存为 meta.json
+func (a *App) saveMetaJson(meta *bing.Meta, absDayDir string) {
+	metaPath := filepath.Join(absDayDir, "meta.json")
+	if metaData, err := json.MarshalIndent(meta, "", "  "); err == nil {
+		if err := os.WriteFile(metaPath, metaData, 0644); err != nil {
+			slog.Warn("Failed to save meta.json", "path", metaPath, "error", err)
+		}
+	}
+}
+
+// ensureWatermark 确保水印图片存在，如果不存在则通过前端渲染生成
+func (a *App) ensureWatermark(meta *bing.Meta, chosen bing.Variant, dayDir, relImagePath, ext string) string {
+	relWatermarkPath := filepath.Join(dayDir, "watermarked"+ext)
+	absWatermarkPath := filepath.Join(store.GetBaseDir(), relWatermarkPath)
+
+	if _, err := os.Stat(absWatermarkPath); err == nil {
+		return relWatermarkPath // 已存在
+	}
+
+	slog.Info("Requesting frontend to render watermark", "image", relImagePath)
+	dataURL, err := a.GetImageDataURL(relImagePath)
+	if err != nil {
+		slog.Error("Failed to get image data url for watermark", "error", err)
+		return ""
+	}
+
+	runtime.EventsEmit(a.ctx, "render-watermark", WatermarkRequest{
+		ImagePath: dataURL,
+		Title:     meta.Title,
+		Date:      meta.Date,
+		Copyright: meta.Copyright,
+		Variant:   chosen.Variant,
+	})
+
+	// 等待前端回传结果（带超时）
+	select {
+	case base64Data := <-a.wmChan:
+		if err := overlay.SaveBase64Image(base64Data, absWatermarkPath); err != nil {
+			slog.Error("Failed to save watermarked image", "path", absWatermarkPath, "error", err)
+			return ""
+		}
+		slog.Info("Watermark saved successfully", "path", relWatermarkPath)
+		return relWatermarkPath
+	case <-time.After(10 * time.Second):
+		slog.Error("Watermark rendering timeout")
+		return ""
+	}
 }
 
 func (a *App) ApplyWallpaper(preferWatermarked bool) error {

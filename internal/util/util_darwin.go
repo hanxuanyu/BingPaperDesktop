@@ -24,6 +24,10 @@ import (
 	"strings"
 )
 
+func OpenFolder(path string) error {
+	return exec.Command("open", path).Start()
+}
+
 func HideDockIcon() {
 	C.SetActivationPolicy(C.NSApplicationActivationPolicyAccessory)
 }

@@ -6,10 +6,15 @@ package util
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"golang.org/x/sys/windows/registry"
 )
+
+func OpenFolder(path string) error {
+	return exec.Command("explorer", path).Start()
+}
 
 func HideDockIcon() {}
 func ShowDockIcon() {}

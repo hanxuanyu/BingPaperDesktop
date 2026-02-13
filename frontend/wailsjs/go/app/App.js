@@ -78,6 +78,10 @@ export function SaveConfig(arg1) {
   return window['go']['app']['App']['SaveConfig'](arg1);
 }
 
+export function SetupTray(arg1, arg2) {
+  return window['go']['app']['App']['SetupTray'](arg1, arg2);
+}
+
 export function Startup(arg1) {
   return window['go']['app']['App']['Startup'](arg1);
 }
