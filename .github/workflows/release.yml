@@ -54,14 +54,35 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            # Build portable version
-            wails build -platform ${{ matrix.platform }}
-            # Move portable to a temporary location to avoid it being cleaned
-            cp build/bin/BingPaperDesktop.exe BingPaperDesktop-Portable.exe
-            # Build installer version (skip frontend build to save time)
-            wails build -platform ${{ matrix.platform }} -nsis -s
-            # Restore portable version
-            mv BingPaperDesktop-Portable.exe build/bin/BingPaperDesktop.exe
+            # 1. Build installer version
+            wails build -platform ${{ matrix.platform }} -nsis
+
+            # 2. Find and move installer to a safe place
+            echo "Searching for installer..."
+            INSTALLER_FILE=$(find build/bin -name "*-installer.exe" | head -n 1)
+            if [ -z "$INSTALLER_FILE" ]; then
+               if [ -f build/bin/BingPaperDesktop-amd64-installer.exe ]; then
+                 INSTALLER_FILE="build/bin/BingPaperDesktop-amd64-installer.exe"
+               elif [ -f build/bin/BingPaperDesktop-windows-amd64-installer.exe ]; then
+                 INSTALLER_FILE="build/bin/BingPaperDesktop-windows-amd64-installer.exe"
+               fi
+            fi
+
+            if [ -n "$INSTALLER_FILE" ]; then
+              echo "Found installer at $INSTALLER_FILE, moving to safe location"
+              cp "$INSTALLER_FILE" BingPaperDesktop-Installer-Temp.exe
+            else
+              echo "Error: Installer not found!"
+              exit 1
+            fi
+
+            # 3. Build portable version (skip frontend build to save time)
+            wails build -platform ${{ matrix.platform }} -s
+
+            # 4. Restore installer to build/bin
+            mv BingPaperDesktop-Installer-Temp.exe build/bin/BingPaperDesktop-Installer.exe
+            echo "Windows build completed. Contents of build/bin:"
+            ls -R build/bin
           else
             wails build -platform ${{ matrix.platform }} ${{ matrix.args }}
           fi
@@ -86,28 +107,6 @@ jobs:
           cd "$OUTPUT_DIR"
           zip -r "${APP_NAME}-macOS.zip" "${APP_NAME}.app"
 
-      - name: Rename Windows Installer
-        if: matrix.os == 'windows-latest'
-        run: |
-          echo "Listing build/bin directory:"
-          ls -R build/bin
-          # Look for any file with -installer.exe suffix
-          INSTALLER_FILE=$(find build/bin -name "*-installer.exe" | head -n 1)
-          if [ -n "$INSTALLER_FILE" ]; then
-            echo "Found installer: $INSTALLER_FILE"
-            mv "$INSTALLER_FILE" build/bin/BingPaperDesktop-Installer.exe
-          else
-            echo "Warning: Could not find installer file with -installer.exe suffix"
-            # Fallback to check common names
-            if [ -f build/bin/BingPaperDesktop-amd64-installer.exe ]; then
-              mv build/bin/BingPaperDesktop-amd64-installer.exe build/bin/BingPaperDesktop-Installer.exe
-            elif [ -f build/bin/BingPaperDesktop-windows-amd64-installer.exe ]; then
-              mv build/bin/BingPaperDesktop-windows-amd64-installer.exe build/bin/BingPaperDesktop-Installer.exe
-            fi
-          fi
-          echo "Final build/bin content:"
-          ls -R build/bin
-        shell: bash
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
