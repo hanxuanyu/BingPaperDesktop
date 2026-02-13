@@ -16,7 +16,7 @@ jobs:
           - os: windows-latest
             platform: windows/amd64
             artifact: BingPaperDesktop.exe
-            args: -nsis
+            args: ""
           - os: macos-latest
             platform: darwin/universal
             artifact: BingPaperDesktop.dmg
@@ -51,7 +51,20 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
       - name: Build Application
-        run: wails build -platform ${{ matrix.platform }} ${{ matrix.args }}
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+            # Build portable version
+            wails build -platform ${{ matrix.platform }}
+            # Move portable to a temporary location to avoid it being cleaned
+            cp build/bin/BingPaperDesktop.exe BingPaperDesktop-Portable.exe
+            # Build installer version (skip frontend build to save time)
+            wails build -platform ${{ matrix.platform }} -nsis -s
+            # Restore portable version
+            mv BingPaperDesktop-Portable.exe build/bin/BingPaperDesktop.exe
+          else
+            wails build -platform ${{ matrix.platform }} ${{ matrix.args }}
+          fi
 
       - name: Prepare Artifacts (macOS)
         if: matrix.os == 'macos-latest'
@@ -76,11 +89,23 @@ jobs:
       - name: Rename Windows Installer
         if: matrix.os == 'windows-latest'
         run: |
-          if [ -f build/bin/BingPaperDesktop-amd64-installer.exe ]; then
-            mv build/bin/BingPaperDesktop-amd64-installer.exe build/bin/BingPaperDesktop-Installer.exe
-          elif [ -f build/bin/BingPaperDesktop-windows-amd64-installer.exe ]; then
-            mv build/bin/BingPaperDesktop-windows-amd64-installer.exe build/bin/BingPaperDesktop-Installer.exe
+          echo "Listing build/bin directory:"
+          ls -R build/bin
+          # Look for any file with -installer.exe suffix
+          INSTALLER_FILE=$(find build/bin -name "*-installer.exe" | head -n 1)
+          if [ -n "$INSTALLER_FILE" ]; then
+            echo "Found installer: $INSTALLER_FILE"
+            mv "$INSTALLER_FILE" build/bin/BingPaperDesktop-Installer.exe
+          else
+            echo "Warning: Could not find installer file with -installer.exe suffix"
+            # Fallback to check common names
+            if [ -f build/bin/BingPaperDesktop-amd64-installer.exe ]; then
+              mv build/bin/BingPaperDesktop-amd64-installer.exe build/bin/BingPaperDesktop-Installer.exe
+            elif [ -f build/bin/BingPaperDesktop-windows-amd64-installer.exe ]; then
+              mv build/bin/BingPaperDesktop-windows-amd64-installer.exe build/bin/BingPaperDesktop-Installer.exe
+            fi
           fi
+          echo "Final build/bin content:"
           ls -R build/bin
         shell: bash
 
