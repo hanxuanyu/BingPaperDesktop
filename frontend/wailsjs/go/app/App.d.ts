@@ -26,6 +26,8 @@ export function GetImageDataURL(arg1:string):Promise<string>;
 
 export function GetWallpaperSupport():Promise<boolean|string>;
 
+export function IsAutoStartEnabled():Promise<boolean>;
+
 export function ListHistory():Promise<Array<store.HistoryItem>>;
 
 export function OpenBaseDir():Promise<void>;

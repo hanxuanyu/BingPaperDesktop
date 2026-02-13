@@ -17,6 +17,7 @@ import (
 
 	"BingPaperDesktop/internal/app"
 	"BingPaperDesktop/internal/store"
+	"BingPaperDesktop/internal/util"
 
 	"github.com/energye/systray"
 	"github.com/wailsapp/wails/v2"
@@ -94,6 +95,10 @@ func main() {
 			go func() {
 				ctx := appInstance.GetContext()
 				if ctx != nil {
+					cfg, _ := store.LoadConfig()
+					if !cfg.HideDockIcon {
+						util.ShowDockIcon()
+					}
 					wruntime.WindowShow(ctx)
 				}
 			}()
@@ -189,6 +194,22 @@ func main() {
 			appInstance,
 		},
 		HideWindowOnClose: true,
+		OnDomReady: func(ctx context.Context) {
+			if runtime.GOOS == "darwin" {
+				cfg, _ := store.LoadConfig()
+				if !cfg.HideDockIcon {
+					util.ShowDockIcon()
+				} else {
+					util.HideDockIcon()
+				}
+			}
+		},
+		OnBeforeClose: func(ctx context.Context) bool {
+			if runtime.GOOS == "darwin" {
+				util.HideDockIcon()
+			}
+			return false // 返回 false 以允许隐藏窗口（配合 HideWindowOnClose: true）
+		},
 	})
 
 	if err != nil {

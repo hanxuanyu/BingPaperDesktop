@@ -46,6 +46,10 @@ export function GetWallpaperSupport() {
   return window['go']['app']['App']['GetWallpaperSupport']();
 }
 
+export function IsAutoStartEnabled() {
+  return window['go']['app']['App']['IsAutoStartEnabled']();
+}
+
 export function ListHistory() {
   return window['go']['app']['App']['ListHistory']();
 }

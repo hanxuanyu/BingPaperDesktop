@@ -63,6 +63,13 @@ func (a *App) Startup(ctx context.Context) {
 	a.sched.Start()
 
 	slog.Info("App startup", "os", filepath.Base(os.Args[0]))
+
+	// 启动时同步开机启动设置
+	if cfg.AutoStart {
+		if err := util.SetAutoStart(true); err != nil {
+			slog.Error("Failed to set auto start on startup", "error", err)
+		}
+	}
 }
 
 func (a *App) GetContext() context.Context {
@@ -77,11 +84,33 @@ func (a *App) SaveConfig(cfg store.Config) error {
 	if cfg.IntervalMinutes < 1 {
 		cfg.IntervalMinutes = 1
 	}
+	// 同步开机启动设置
+	oldCfg, _ := store.LoadConfig()
+	if oldCfg.AutoStart != cfg.AutoStart {
+		if err := util.SetAutoStart(cfg.AutoStart); err != nil {
+			slog.Error("Failed to set auto start", "enable", cfg.AutoStart, "error", err)
+			// 继续保存配置，但可能在这里返回错误或者保持旧的 AutoStart 状态
+		}
+	}
+
+	// 同步 macOS Dock 图标显示设置
+	if oldCfg.HideDockIcon != cfg.HideDockIcon {
+		if cfg.HideDockIcon {
+			util.HideDockIcon()
+		} else {
+			util.ShowDockIcon()
+		}
+	}
+
 	err := store.SaveConfig(cfg)
 	if err == nil {
 		a.sched.Update(cfg.ScheduleMode, cfg.DailyTime, cfg.IntervalMinutes)
 	}
 	return err
+}
+
+func (a *App) IsAutoStartEnabled() (bool, error) {
+	return util.IsAutoStartEnabled()
 }
 
 func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, error) {

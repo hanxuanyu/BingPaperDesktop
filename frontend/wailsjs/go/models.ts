@@ -52,6 +52,8 @@ export namespace store {
 	    interval_minutes: number;
 	    retain_days: number;
 	    random_history: boolean;
+	    auto_start: boolean;
+	    hide_dock_icon: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Config(source);
@@ -71,6 +73,8 @@ export namespace store {
 	        this.interval_minutes = source["interval_minutes"];
 	        this.retain_days = source["retain_days"];
 	        this.random_history = source["random_history"];
+	        this.auto_start = source["auto_start"];
+	        this.hide_dock_icon = source["hide_dock_icon"];
 	    }
 	}
 	export class HistoryItem {

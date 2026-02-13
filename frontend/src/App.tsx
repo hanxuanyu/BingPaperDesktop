@@ -18,7 +18,7 @@ import {
   TooltipProvider, 
   TooltipTrigger 
 } from '@/components/ui/tooltip';
-import { EventsOn } from '../wailsjs/runtime';
+import { EventsOn, Environment } from '../wailsjs/runtime';
 import { 
   GetConfig, 
   SaveConfig, 
@@ -76,6 +76,7 @@ function App() {
   const [history, setHistory] = useState<store.HistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [wallpaperSupport, setWallpaperSupport] = useState<any>(true);
+  const [platform, setPlatform] = useState<string>('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const isManualFetching = useRef(false);
@@ -133,6 +134,7 @@ function App() {
     loadHistory();
     fetchToday(true);
     GetWallpaperSupport().then(setWallpaperSupport);
+    Environment().then(env => setPlatform(env.platform));
 
     // Sync current image listener
     const unregisterSync = EventsOn('current-image-changed', (item: store.HistoryItem) => {
@@ -623,6 +625,30 @@ function App() {
                                checked={config?.force_uhd || false}
                                onCheckedChange={(val) => config && setConfig({ ...config, force_uhd: val })}
                              />
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between">
+                           <div className="space-y-0.5">
+                             <Label className="text-base">开机自启动</Label>
+                             <p className="text-xs text-muted-foreground">在系统启动后自动运行应用</p>
+                           </div>
+                           <Switch 
+                             checked={config?.auto_start || false}
+                             onCheckedChange={(val) => config && setConfig({ ...config, auto_start: val })}
+                           />
+                        </div>
+
+                        {platform === 'darwin' && (
+                          <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                              <Label className="text-base">隐藏 Dock 图标</Label>
+                              <p className="text-xs text-muted-foreground">仅在状态栏显示，不在 Dock 栏显示图标</p>
+                            </div>
+                            <Switch 
+                              checked={config?.hide_dock_icon || false}
+                              onCheckedChange={(val) => config && setConfig({ ...config, hide_dock_icon: val })}
+                            />
                           </div>
                         )}
                         

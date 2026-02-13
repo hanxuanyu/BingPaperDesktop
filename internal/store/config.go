@@ -23,6 +23,8 @@ type Config struct {
 	IntervalMinutes int    `json:"interval_minutes"`
 	RetainDays      int    `json:"retain_days"`
 	RandomHistory   bool   `json:"random_history"`
+	AutoStart       bool   `json:"auto_start"`
+	HideDockIcon    bool   `json:"hide_dock_icon"`
 }
 
 var (
@@ -110,6 +112,8 @@ func DefaultConfig() Config {
 		IntervalMinutes: 60,
 		RetainDays:      0,
 		RandomHistory:   false,
+		AutoStart:       false,
+		HideDockIcon:    false,
 	}
 }
 
