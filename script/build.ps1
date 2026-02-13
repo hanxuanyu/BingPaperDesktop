@@ -48,15 +48,6 @@ Clean-OutputDir
 Write-Host "Building Windows standalone executable..." -ForegroundColor Green
 Build-Platform -Platform "windows/amd64"
 
-# Check if NSIS is installed to generate a Windows installer
-if (Get-Command makensis -ErrorAction SilentlyContinue) {
-    Write-Host "NSIS detected. Generating Windows installer..." -ForegroundColor Gray
-    # Use -s to skip frontend build since it was just built
-    Build-Platform -Platform "windows/amd64" -ExtraArgs "-nsis -s"
-} else {
-    Write-Host "NSIS not found. Skipping Windows installer generation." -ForegroundColor Yellow
-}
-
 # 3. Build for Linux (amd64)
 Build-Platform -Platform "linux/amd64"
 

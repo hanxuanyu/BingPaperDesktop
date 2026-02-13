@@ -53,39 +53,7 @@ jobs:
       - name: Build Application
         shell: bash
         run: |
-          if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            # 1. Build installer version
-            wails build -platform ${{ matrix.platform }} -nsis
-
-            # 2. Find and move installer to a safe place
-            echo "Searching for installer..."
-            INSTALLER_FILE=$(find build/bin -name "*-installer.exe" | head -n 1)
-            if [ -z "$INSTALLER_FILE" ]; then
-               if [ -f build/bin/BingPaperDesktop-amd64-installer.exe ]; then
-                 INSTALLER_FILE="build/bin/BingPaperDesktop-amd64-installer.exe"
-               elif [ -f build/bin/BingPaperDesktop-windows-amd64-installer.exe ]; then
-                 INSTALLER_FILE="build/bin/BingPaperDesktop-windows-amd64-installer.exe"
-               fi
-            fi
-
-            if [ -n "$INSTALLER_FILE" ]; then
-              echo "Found installer at $INSTALLER_FILE, moving to safe location"
-              cp "$INSTALLER_FILE" BingPaperDesktop-Installer-Temp.exe
-            else
-              echo "Error: Installer not found!"
-              exit 1
-            fi
-
-            # 3. Build portable version (skip frontend build to save time)
-            wails build -platform ${{ matrix.platform }} -s
-
-            # 4. Restore installer to build/bin
-            mv BingPaperDesktop-Installer-Temp.exe build/bin/BingPaperDesktop-Installer.exe
-            echo "Windows build completed. Contents of build/bin:"
-            ls -R build/bin
-          else
-            wails build -platform ${{ matrix.platform }} ${{ matrix.args }}
-          fi
+          wails build -platform ${{ matrix.platform }} ${{ matrix.args }}
 
       - name: Prepare Artifacts (macOS)
         if: matrix.os == 'macos-latest'

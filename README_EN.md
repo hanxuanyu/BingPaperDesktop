@@ -23,7 +23,7 @@ A cross-platform Bing Daily Wallpaper desktop client developed with Wails v2 + G
 
 Go to the [Releases](https://github.com/hanxuanyu/BingPaperDesktop/releases) page to download the installer for your platform:
 
-- **Windows**: `.exe` installer or portable standalone version.
+- **Windows**: Portable standalone version (`.exe`).
 - **macOS**: `.dmg` disk image for easy drag-and-drop installation.
 - **Linux**: Standalone binary executable.
 

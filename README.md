@@ -23,7 +23,7 @@
 
 前往 [Releases](https://github.com/hanxuanyu/BingPaperDesktop/releases) 页面下载对应平台的安装包：
 
-- **Windows**: `.exe` 安装包或绿色单文件版。
+- **Windows**: 绿色单文件版（`.exe`）。
 - **macOS**: `.dmg` 磁盘镜像，拖拽即可安装。
 - **Linux**: 直接运行的二进制文件。
 

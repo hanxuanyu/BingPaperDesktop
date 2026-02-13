@@ -43,14 +43,6 @@ clean
 echo "Building Windows standalone executable..."
 build_platform "windows/amd64"
 
-if command -v makensis >/dev/null 2>&1; then
-    echo "NSIS detected. Generating Windows installer..."
-    # Use -s to skip frontend build since it was just built
-    build_platform "windows/amd64" "-nsis -s"
-else
-    echo "NSIS not found. Skipping Windows installer generation."
-fi
-
 # 2. Build for Linux (amd64)
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     # Check if we should use webkit2gtk-4.1 (standard on Ubuntu 24.04+)
