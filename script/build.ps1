@@ -3,6 +3,9 @@
 
 $ErrorActionPreference = "Stop"
 
+# Change to the project root directory
+Set-Location -Path $PSScriptRoot\..
+
 $AppName = "BingPaperDesktop"
 $OutputDir = "build\bin"
 

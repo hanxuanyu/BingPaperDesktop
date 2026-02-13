@@ -1,78 +1,71 @@
 # BingPaperDesktop
 
-基于 Wails v2 + Go + React 开发的跨平台 Bing 每日壁纸桌面客户端。
+[English](./README_EN.md) | 简体中文
 
-## 功能特性
+基于 Wails v2 + Go + React 开发的跨平台 Bing 每日壁纸桌面客户端。它能够自动获取 Bing 每日高清壁纸，并支持壁纸预览、历史记录管理、自动更新以及水印叠加等功能。
 
-- **多 API 支持**：支持必应官方 API 和 BingPaper 自定义 API，可根据需求灵活选择。
-- **自动获取**：每日自动从 Bing 获取高清壁纸。
-- **智能存储**：默认使用便携模式（数据存放在应用同级目录）；若当前目录不可写（如 macOS 的 `.app` 包内或只读目录），则自动切换至系统用户配置目录。
-- **壁纸历史**：支持浏览历史壁纸、设为当前、删除及清空。
-- **水印叠加**：可选在壁纸上叠加图片元数据（标题、日期、版权）。
-- **定时任务**：支持按每日固定时间或固定间隔自动获取。
-- **跨平台支持**：支持 Windows、macOS 及 Linux (GNOME)。
+### 🚀 功能特性
 
-## 存储结构
+- **多 API 模式**：支持 Bing 官方接口及自定义 API。
+- **自动壁纸更新**：支持定时任务（固定时间或固定间隔）自动更换桌面壁纸。
+- **壁纸历史管理**：查看历史壁纸，一键设为当前或删除。
+- **智能存储管理**：
+    - **便携模式**：优先在应用同级目录存储数据。
+    - **标准模式**：当应用目录不可写（如 macOS .app 内）时，自动切换到用户配置目录。
+- **水印叠加**：可选在壁纸上叠加标题、版权、日期等元数据。
+- **跨平台支持**：完美支持 Windows (10/11)、macOS 以及 Linux (GNOME)。
 
-应用支持两种存储模式：
+### 📦 安装与下载
 
-1. **便携模式 (Portable)**：当应用所在目录可写时，配置文件 (`config.json`)、数据目录 (`data/`) 和日志 (`logs/`) 均存放在应用同级目录。
-2. **标准模式**：当应用在只读目录运行（如 macOS 的 `.app` 包内或 Linux 的 `/usr/bin`）时，数据将存放在系统用户配置目录：
-   - **macOS**: `~/Library/Application Support/BingPaperDesktop/`
-   - **Windows**: `%AppData%\BingPaperDesktop\`
-   - **Linux**: `~/.config/BingPaperDesktop/`
+前往 [Releases](https://github.com/hanxuanyu/BingPaperDesktop/releases) 页面下载对应平台的安装包：
 
-## 开发与构建
+- **Windows**: `.exe` 安装包或绿色单文件版。
+- **macOS**: `.dmg` 磁盘镜像，拖拽即可安装。
+- **Linux**: 直接运行的二进制文件。
 
-### 前提条件
+### 🛠️ 本地开发
 
-- Go 1.22+
-- Node.js & npm
+#### 前提条件
+- [Go](https://go.dev/) (1.23+)
+- [Node.js](https://nodejs.org/) (20+)
 - [Wails CLI](https://wails.io/docs/gettingstarted/installation)
 
-### 运行开发模式
+#### 运行步骤
+1. 克隆仓库：
+   ```bash
+   git clone https://github.com/hanxuanyu/BingPaperDesktop.git
+   cd BingPaperDesktop
+   ```
+2. 运行开发模式：
+   ```bash
+   wails dev
+   ```
 
-```bash
-wails dev
-```
+### 🏗️ 项目构建
 
-### 构建正式版本
-
-可以直接使用 Wails CLI 构建：
-
-```bash
-wails build
-```
-
-或者使用本项目提供的自动化构建脚本（支持多平台构建）：
+你可以使用 `script` 目录下的脚本进行快速构建：
 
 - **macOS / Linux**:
   ```bash
-  ./build.sh
+  ./script/build.sh
   ```
 - **Windows (PowerShell)**:
   ```powershell
-  .\build.ps1
+  .\script\build.ps1
   ```
 
-构建产物将存放在 `build/bin/` 目录下。
+构建产物将存放在 `build/bin` 目录下。
 
-### 安装包分发
+### 🛳️ 发布新版本
 
-本项目支持一键生成各平台的安装包：
+项目配置了自动化 CI/CD 工作流：
+- **Verify**: 每当 master 分支有推送或 PR 时，自动进行构建校验。
+- **Release**: 推送以 `v` 开头的 Tag 时，自动构建多平台产物并生成 Release。
 
-- **Windows**: 若系统中安装了 [NSIS](https://nsis.sourceforge.io/)，构建脚本会自动生成 `.exe` 安装程序以及可以直接运行的独立执行文件。
-- **macOS**: 构建脚本会自动将 `.app` 封装为 `.dmg` 镜像（包含 Applications 快捷方式），方便用户拖拽安装。
-- **Linux**: 目前直接分发可执行二进制文件。
+开发者可以使用以下脚本快速发布：
+- **macOS / Linux**: `./script/publish_tag.sh v1.x.x`
+- **Windows**: `.\script\publish_tag.ps1 v1.x.x`
 
-## Linux 支持说明
+### 📄 开源协议
 
-目前 Linux 端仅针对 GNOME 桌面环境（使用 `gsettings`）进行了测试与支持。其他桌面环境将提示“不支持”并提供打开数据目录的功能。
-
-## 注意事项 (macOS)
-
-在 macOS 上，直接从 DMG 运行或将 `.app` 放入 `/Applications` 时，应用会自动切换到“标准模式”，将数据保存在用户支持目录。这解决了因 `.app` 包内部只读而导致的闪退问题。
-
-## 问题排查
-
-如果壁纸未能成功设置，请查看 `logs/app.log` 获取详细错误堆栈。常见原因包括 API 地址失效、网络超时或系统权限受限。
+本项目采用 [MIT License](./LICENSE) 开源。

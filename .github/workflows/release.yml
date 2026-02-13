@@ -1,0 +1,111 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows/amd64
+            artifact: BingPaperDesktop.exe
+            args: -nsis
+          - os: macos-latest
+            platform: darwin/universal
+            artifact: BingPaperDesktop.dmg
+          - os: ubuntu-latest
+            platform: linux/amd64
+            artifact: BingPaperDesktop
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Build Application
+        run: wails build -platform ${{ matrix.platform }} ${{ matrix.args }}
+
+      - name: Prepare Artifacts (macOS DMG)
+        if: matrix.os == 'macos-latest'
+        run: |
+          APP_NAME="BingPaperDesktop"
+          OUTPUT_DIR="build/bin"
+          APP_PATH="$OUTPUT_DIR/$APP_NAME.app"
+          DMG_TEMP="build/bin/dmg_temp"
+          rm -rf "$DMG_TEMP"
+          mkdir -p "$DMG_TEMP"
+          cp -R "$APP_PATH" "$DMG_TEMP/"
+          ln -s /Applications "$DMG_TEMP/Applications"
+          hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_TEMP" -ov -format UDZO "$OUTPUT_DIR/$APP_NAME.dmg"
+          rm -rf "$DMG_TEMP"
+
+      - name: Rename Windows Installer
+        if: matrix.os == 'windows-latest'
+        run: |
+          mv build/bin/BingPaperDesktop-amd64-installer.exe build/bin/BingPaperDesktop-Installer.exe
+        shell: bash
+        continue-on-error: true
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-build
+          path: |
+            build/bin/*.exe
+            build/bin/*.dmg
+            build/bin/BingPaperDesktop
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Organize artifacts
+        run: |
+          mkdir -p release_assets
+          find artifacts -type f \( -name "*.exe" -o -name "*.dmg" -o -name "BingPaperDesktop" \) -exec cp {} release_assets/ \;
+          ls -R release_assets
+
+      - name: Generate Changelog
+        id: changelog
+        uses: metcalfe-paul/changelog-generator@v4.3.1
+        with:
+          myToken: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.changelog.outputs.changelog }}
+          files: release_assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

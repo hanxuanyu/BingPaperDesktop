@@ -5,6 +5,9 @@
 
 set -e
 
+# Change to the project root directory
+cd "$(dirname "$0")/.."
+
 APP_NAME="BingPaperDesktop"
 OUTPUT_DIR="build/bin"
 WAILS_BIN=$(which wails)
