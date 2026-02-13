@@ -40,6 +40,9 @@ Go to the [Releases](https://github.com/hanxuanyu/BingPaperDesktop/releases) pag
    git clone https://github.com/hanxuanyu/BingPaperDesktop.git
    cd BingPaperDesktop
    ```
+
+> **Tip**: If you are prompted for a password when pushing via command line, it's recommended to [configure SSH](https://docs.github.com/en/authentication/connecting-to-github-with-ssh) or use [GitHub CLI](https://cli.github.com/) for authentication.
+
 2. Run development mode:
    ```bash
    wails dev

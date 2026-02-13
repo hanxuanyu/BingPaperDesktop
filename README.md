@@ -40,6 +40,9 @@
    git clone https://github.com/hanxuanyu/BingPaperDesktop.git
    cd BingPaperDesktop
    ```
+
+> **提示**：如果命令行推送时提示需要密码，建议[配置 SSH](https://docs.github.com/en/authentication/connecting-to-github-with-ssh) 或使用 [GitHub CLI](https://cli.github.com/) 授权。
+
 2. 运行开发模式：
    ```bash
    wails dev
