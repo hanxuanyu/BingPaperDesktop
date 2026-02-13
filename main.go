@@ -64,9 +64,10 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:  "BingPaperDesktop",
-		Width:  1024,
-		Height: 768,
+		Title:       "BingPaperDesktop",
+		Width:       1024,
+		Height:      768,
+		StartHidden: true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
@@ -87,12 +88,8 @@ func main() {
 		HideWindowOnClose: true,
 		OnDomReady: func(ctx context.Context) {
 			if runtime.GOOS == "darwin" {
-				cfg, _ := store.LoadConfig()
-				if !cfg.HideDockIcon {
-					util.ShowDockIcon()
-				} else {
-					util.HideDockIcon()
-				}
+				// 启动时窗口隐藏，因此也隐藏 Dock 图标
+				util.HideDockIcon()
 			}
 		},
 		OnBeforeClose: func(ctx context.Context) bool {
