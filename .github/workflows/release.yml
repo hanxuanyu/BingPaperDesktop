@@ -97,16 +97,10 @@ jobs:
           find artifacts -type f \( -name "*.exe" -o -name "*.dmg" -o -name "BingPaperDesktop" \) -exec cp {} release_assets/ \;
           ls -R release_assets
 
-      - name: Generate Changelog
-        id: changelog
-        uses: metcalfe-paul/changelog-generator@v4.3.1
-        with:
-          myToken: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          body: ${{ steps.changelog.outputs.changelog }}
+          generate_release_notes: true
           files: release_assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
