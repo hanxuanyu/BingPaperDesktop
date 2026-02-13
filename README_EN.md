@@ -60,15 +60,6 @@ You can use the scripts in the `script` directory for quick building:
 
 Build artifacts will be located in the `build/bin` directory.
 
-### 🛳️ Release New Version
-
-The project is configured with automated CI/CD workflows:
-- **Verify**: Automatically performs build validation on every push or PR to the master branch.
-- **Release**: Automatically builds multi-platform artifacts and generates a Release when a tag starting with `v` is pushed.
-
-Developers can use the following scripts to quickly publish a release:
-- **macOS / Linux**: `./script/publish_tag.sh v1.x.x`
-- **Windows**: `.\script\publish_tag.ps1 v1.x.x`
 
 ### 📄 License
 

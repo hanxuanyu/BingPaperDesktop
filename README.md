@@ -60,15 +60,6 @@
 
 构建产物将存放在 `build/bin` 目录下。
 
-### 🛳️ 发布新版本
-
-项目配置了自动化 CI/CD 工作流：
-- **Verify**: 每当 master 分支有推送或 PR 时，自动进行构建校验。
-- **Release**: 推送以 `v` 开头的 Tag 时，自动构建多平台产物并生成 Release。
-
-开发者可以使用以下脚本快速发布：
-- **macOS / Linux**: `./script/publish_tag.sh v1.x.x`
-- **Windows**: `.\script\publish_tag.ps1 v1.x.x`
 
 ### 📄 开源协议
 
