@@ -16,9 +16,11 @@ jobs:
           - os: windows-latest
             platform: windows/amd64
             artifact: BingPaperDesktop.exe
+            args: -nsis
           - os: macos-latest
             platform: darwin/universal
             artifact: BingPaperDesktop.dmg
+            args: ""
           - os: ubuntu-latest
             platform: linux/amd64
             artifact: BingPaperDesktop
@@ -51,10 +53,6 @@ jobs:
       - name: Build Application
         run: wails build -platform ${{ matrix.platform }} ${{ matrix.args }}
 
-      - name: Build Windows Installer
-        if: matrix.os == 'windows-latest'
-        run: wails build -platform ${{ matrix.platform }} -nsis
-
       - name: Prepare Artifacts (macOS)
         if: matrix.os == 'macos-latest'
         run: |
@@ -80,7 +78,10 @@ jobs:
         run: |
           if [ -f build/bin/BingPaperDesktop-amd64-installer.exe ]; then
             mv build/bin/BingPaperDesktop-amd64-installer.exe build/bin/BingPaperDesktop-Installer.exe
+          elif [ -f build/bin/BingPaperDesktop-windows-amd64-installer.exe ]; then
+            mv build/bin/BingPaperDesktop-windows-amd64-installer.exe build/bin/BingPaperDesktop-Installer.exe
           fi
+          ls -R build/bin
         shell: bash
 
       - name: Upload Artifacts
