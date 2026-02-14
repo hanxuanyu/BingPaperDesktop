@@ -84,9 +84,14 @@ jobs:
 
           echo "Signing Package"
           # 使用 sed 替换配置文件中的占位符
+          # 为 gon-sign-app.json 替换所有必要信息
           sed -i '' "s/APPLE_BUNDLE_ID/${{ secrets.APPLE_BUNDLE_ID || 'com.wails.BingPaperDesktop' }}/g" ./build/darwin/gon-sign-app.json
           sed -i '' "s/APPLE_IDENTITY/${{ secrets.APPLE_IDENTITY }}/g" ./build/darwin/gon-sign-app.json
+          sed -i '' "s/APPLE_ID_USER/${{ secrets.APPLE_ID_USER }}/g" ./build/darwin/gon-sign-app.json
+          sed -i '' "s/APPLE_PASSWORD/${{ secrets.APPLE_PASSWORD }}/g" ./build/darwin/gon-sign-app.json
+          sed -i '' "s/APPLE_PROVIDER/${{ secrets.APPLE_PROVIDER }}/g" ./build/darwin/gon-sign-app.json
           
+          # 为 gon-notarize.json 替换所有必要信息
           sed -i '' "s/APPLE_BUNDLE_ID/${{ secrets.APPLE_BUNDLE_ID || 'com.wails.BingPaperDesktop' }}/g" ./build/darwin/gon-notarize.json
           sed -i '' "s/APPLE_ID_USER/${{ secrets.APPLE_ID_USER }}/g" ./build/darwin/gon-notarize.json
           sed -i '' "s/APPLE_PASSWORD/${{ secrets.APPLE_PASSWORD }}/g" ./build/darwin/gon-notarize.json
