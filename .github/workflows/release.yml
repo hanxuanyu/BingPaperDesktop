@@ -202,13 +202,20 @@ jobs:
           fi
 
           echo "Storing credentials in temporary keychain..."
-          # 使用 store-credentials 将 API Key 存储到临时 Keychain 中，
-          # 这通常能避开直接使用 --key 参数时在某些系统环境下触发的崩溃。
-          xcrun notarytool store-credentials "notary-profile" \
-            --key "$KEY_PATH" \
-            --key-id "$ASC_API_KEY_ID" \
-            --issuer "$ASC_API_ISSUER_ID" \
-            --team-id "${MACOS_TEAM_ID:-}"
+          # Fix: Only include --team-id if it's actually provided to avoid "Cannot store both..." error
+          STORE_ARGS=(
+            store-credentials "notary-profile"
+            --key "$KEY_PATH"
+            --key-id "$ASC_API_KEY_ID"
+            --issuer "$ASC_API_ISSUER_ID"
+            --keychain "$RUNNER_TEMP/build.keychain-db"
+          )
+
+          if [ -n "${MACOS_TEAM_ID:-}" ]; then
+            STORE_ARGS+=(--team-id "$MACOS_TEAM_ID")
+          fi
+
+          xcrun notarytool "${STORE_ARGS[@]}"
 
           echo "Notarizing DMG..."
           xcrun notarytool submit "$DMG_PATH" --keychain "$RUNNER_TEMP/build.keychain-db" --keychain-profile "notary-profile" --wait --verbose
