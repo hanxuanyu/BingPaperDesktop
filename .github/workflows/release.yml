@@ -194,33 +194,27 @@ jobs:
           OUTPUT_DIR="$(pwd)/build/bin"
           DMG_PATH="$OUTPUT_DIR/$APP_NAME.dmg"
           ZIP_PATH="$OUTPUT_DIR/${APP_NAME}-macOS.zip"
+          KEY_PATH="$RUNNER_TEMP/asc/AuthKey.p8"
 
           if [ ! -f "$DMG_PATH" ]; then
             echo "DMG not found at $DMG_PATH"
             exit 1
           fi
 
+          echo "Storing credentials in temporary keychain..."
+          # 使用 store-credentials 将 API Key 存储到临时 Keychain 中，
+          # 这通常能避开直接使用 --key 参数时在某些系统环境下触发的崩溃。
+          xcrun notarytool store-credentials "notary-profile" \
+            --key "$KEY_PATH" \
+            --key-id "$ASC_API_KEY_ID" \
+            --issuer "$ASC_API_ISSUER_ID" \
+            --team-id "${MACOS_TEAM_ID:-}"
+
           echo "Notarizing DMG..."
-          NOTARY_ARGS=(
-            submit "$DMG_PATH"
-            --key "$RUNNER_TEMP/asc/AuthKey.p8"
-            --key-id "$ASC_API_KEY_ID"
-            --issuer "$ASC_API_ISSUER_ID"
-            --wait
-            --verbose
-          )
-
-          # 如果定义了 MACOS_TEAM_ID，则添加该参数
-          if [ -n "${MACOS_TEAM_ID:-}" ]; then
-            NOTARY_ARGS+=(--team-id "$MACOS_TEAM_ID")
-          fi
-
-          xcrun notarytool "${NOTARY_ARGS[@]}"
+          xcrun notarytool submit "$DMG_PATH" --keychain "$RUNNER_TEMP/build.keychain-db" --keychain-profile "notary-profile" --wait --verbose
 
           echo "Notarizing ZIP..."
-          # 更新数组中的文件路径，保持其他参数不变
-          NOTARY_ARGS[1]="$ZIP_PATH"
-          xcrun notarytool "${NOTARY_ARGS[@]}"
+          xcrun notarytool submit "$ZIP_PATH" --keychain "$RUNNER_TEMP/build.keychain-db" --keychain-profile "notary-profile" --wait --verbose
 
       - name: macOS - Staple notarization ticket
         if: runner.os == 'macOS'
