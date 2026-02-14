@@ -7,7 +7,7 @@
   "notarize": [{
     "path": "./build/bin/BingPaperDesktop_macos.zip",
     "bundle_id": "APPLE_BUNDLE_ID",
-    "staple": true
+    "staple": false
   }, {
     "path": "./build/bin/BingPaperDesktop_macos.dmg",
     "bundle_id": "APPLE_BUNDLE_ID",
