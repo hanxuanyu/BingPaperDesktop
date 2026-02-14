@@ -1,249 +1,111 @@
-
-name: Release
+name: "Release"
 
 on:
   push:
     tags:
-      - "v*"
-
-permissions:
-  contents: write
+      - 'v*'
+  workflow_dispatch:
 
 jobs:
-  build:
+  package:
     strategy:
       matrix:
         include:
-          - os: windows-latest
-            platform: windows/amd64
-            args: ""
-          - os: macos-14
-            platform: darwin/universal
-            args: ""
-          - os: ubuntu-latest
-            platform: linux/amd64
-            args: -tags webkit2_41
-
-    runs-on: ${{ matrix.os }}
+          - platform: 'windows-latest'
+            go-version: '1.23'
+            node-version: '20'
+          - platform: 'macos-latest'
+            go-version: '1.23'
+            node-version: '20'
+    runs-on: ${{ matrix.platform }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Go
+      - name: Install Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.23"
+          go-version: ${{ matrix.go-version }}
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ matrix.node-version }}
 
-      - name: Install dependencies (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config libayatana-appindicator3-dev
-
-      - name: Install Wails CLI
+      - name: Get Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
-      - name: Build Application
-        shell: bash
+      - name: Build Wails app
         run: |
-          wails build -platform ${{ matrix.platform }} ${{ matrix.args }}
+          wails build -platform ${{ matrix.platform == 'windows-latest' && 'windows/amd64' || 'darwin/universal' }}
 
-      # -----------------------------
-      # macOS: Sign + Notarize + Package
-      # -----------------------------
-      - name: macOS - Select Xcode (diagnostics)
-        if: runner.os == 'macOS'
-        shell: bash
+      - name: MacOS download gon for code signing and app notarization
+        if: matrix.platform == 'macos-latest'
         run: |
-          set -euo pipefail
-          sudo xcode-select -s /Applications/Xcode.app
-          sw_vers
-          xcodebuild -version
-          xcrun --version
-          xcrun notarytool --version
+          brew install Bearer/tap/gon
 
-      - name: macOS - Import signing cert & setup keychain
-        if: runner.os == 'macOS'
-        shell: bash
-        env:
-          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
-          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+      - name: Import Code-Signing Certificates for macOS
+        if: matrix.platform == 'macos-latest'
+        uses: Apple-Actions/import-codesign-certs@v1
+        with:
+          p12-file-base64: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_P12_BASE64 }}
+          p12-password: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_PASSWORD }}
+
+      - name: Sign our macOS binary
+        if: matrix.platform == 'macos-latest'
         run: |
-          set -euo pipefail
+          echo "Signing Package"
+          # 使用 sed 替换配置文件中的占位符
+          sed -i '' "s/APPLE_PASSWORD/${{ secrets.APPLE_PASSWORD }}/g" ./build/darwin/gon-sign.json
+          sed -i '' "s/APPLE_PROVIDER/${{ secrets.APPLE_PROVIDER }}/g" ./build/darwin/gon-sign.json
+          gon -log-level=info ./build/darwin/gon-sign.json
 
-          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
-          KEYCHAIN_PASSWORD="$(uuidgen)"
-
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          # Decode p12 (macOS-friendly)
-          printf "%s" "$MACOS_CERT_P12_BASE64" | tr -d '\n' | tr -d '\r' | base64 -D > "$RUNNER_TEMP/cert.p12"
-
-          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN_PATH" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          # Use this keychain for this job
-          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
-          security default-keychain -d user -s "$KEYCHAIN_PATH"
-
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
-
-      - name: macOS - Prepare notarization API key
-        if: runner.os == 'macOS'
-        shell: bash
-        env:
-          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+      - name: Sign Windows binaries
+        if: matrix.platform == 'windows-latest'
+        shell: powershell
         run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/asc"
-          printf "%s" "$ASC_API_KEY_P8_BASE64" | tr -d '\n' | tr -d '\r' | base64 -D > "$RUNNER_TEMP/asc/AuthKey.p8"
-          chmod 600 "$RUNNER_TEMP/asc/AuthKey.p8"
+          echo "Creating certificate file"
+          New-Item -ItemType directory -Path certificate
+          Set-Content -Path certificate\certificate.txt -Value '${{ secrets.WIN_SIGNING_CERT }}'
+          certutil -decode certificate\certificate.txt certificate\certificate.pfx
+          echo "Signing our binaries"
+          \$signtool = "C:/Program Files (x86)/Windows Kits/10/bin/10.0.17763.0/x86/signtool.exe"
+          if (!(Test-Path \$signtool)) {
+              \$signtool = "signtool.exe"
+          }
+          & \$signtool sign /fd sha256 /tr http://ts.ssl.com /f certificate\certificate.pfx /p '${{ secrets.WIN_SIGNING_CERT_PASSWORD }}' .\build\bin\BingPaperDesktop.exe
 
-          test -s "$RUNNER_TEMP/asc/AuthKey.p8"
-          head -n 1 "$RUNNER_TEMP/asc/AuthKey.p8" | grep -q "BEGIN PRIVATE KEY"
-          tail -n 1 "$RUNNER_TEMP/asc/AuthKey.p8" | grep -q "END PRIVATE KEY"
-
-      - name: macOS - Codesign .app (hardened runtime)
-        if: runner.os == 'macOS'
-        shell: bash
-        env:
-          MACOS_CERT_IDENTITY: ${{ secrets.MACOS_CERT_IDENTITY }}
-        run: |
-          set -euo pipefail
-
-          APP_NAME="BingPaperDesktop"
-          OUTPUT_DIR="build/bin"
-          APP_PATH="$OUTPUT_DIR/$APP_NAME.app"
-
-          test -d "$APP_PATH"
-
-          /usr/bin/codesign --force --options runtime --timestamp \
-            --sign "$MACOS_CERT_IDENTITY" \
-            --deep "$APP_PATH"
-
-          /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-
-      - name: macOS - Create DMG + ZIP
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          APP_NAME="BingPaperDesktop"
-          OUTPUT_DIR="build/bin"
-          APP_PATH="$OUTPUT_DIR/$APP_NAME.app"
-
-          # DMG
-          DMG_TEMP="$RUNNER_TEMP/dmg_temp"
-          rm -rf "$DMG_TEMP"
-          mkdir -p "$DMG_TEMP"
-          cp -R "$APP_PATH" "$DMG_TEMP/"
-          ln -s /Applications "$DMG_TEMP/Applications"
-          hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_TEMP" -ov -format UDZO "$OUTPUT_DIR/$APP_NAME.dmg"
-          rm -rf "$DMG_TEMP"
-
-          # ZIP
-          rm -f "$OUTPUT_DIR/${APP_NAME}-macOS.zip"
-          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$OUTPUT_DIR/${APP_NAME}-macOS.zip"
-
-          ls -la "$OUTPUT_DIR"
-
-      - name: macOS - (Recommended) Codesign DMG
-        if: runner.os == 'macOS'
-        shell: bash
-        env:
-          MACOS_CERT_IDENTITY: ${{ secrets.MACOS_CERT_IDENTITY }}
-        run: |
-          set -euo pipefail
-          APP_NAME="BingPaperDesktop"
-          OUTPUT_DIR="build/bin"
-          DMG_PATH="$OUTPUT_DIR/$APP_NAME.dmg"
-
-          /usr/bin/codesign --force --timestamp --sign "$MACOS_CERT_IDENTITY" "$DMG_PATH"
-          /usr/bin/codesign --verify --verbose=2 "$DMG_PATH"
-
-      - name: macOS - Notarize DMG and ZIP (wait)
-        if: runner.os == 'macOS'
-        shell: bash
-        env:
-          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
-          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
-        run: |
-          set -euo pipefail
-
-          APP_NAME="BingPaperDesktop"
-          OUTPUT_DIR="$(pwd)/build/bin"
-          DMG_PATH="$OUTPUT_DIR/$APP_NAME.dmg"
-          ZIP_PATH="$OUTPUT_DIR/${APP_NAME}-macOS.zip"
-          KEY_PATH="$RUNNER_TEMP/asc/AuthKey.p8"
-          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
-
-          test -f "$DMG_PATH"
-          test -f "$ZIP_PATH"
-
-          # Store credentials into the temp keychain as a profile
-          xcrun notarytool store-credentials "notary-profile" \
-            --key "$KEY_PATH" \
-            --key-id "$ASC_API_KEY_ID" \
-            --issuer "$ASC_API_ISSUER_ID" \
-            --keychain "$KEYCHAIN_PATH"
-
-          xcrun notarytool submit "$DMG_PATH" --keychain "$KEYCHAIN_PATH" --keychain-profile "notary-profile" --wait --verbose
-          xcrun notarytool submit "$ZIP_PATH" --keychain "$KEYCHAIN_PATH" --keychain-profile "notary-profile" --wait --verbose
-
-      - name: macOS - Staple notarization ticket
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          APP_NAME="BingPaperDesktop"
-          OUTPUT_DIR="build/bin"
-          APP_PATH="$OUTPUT_DIR/$APP_NAME.app"
-          DMG_PATH="$OUTPUT_DIR/$APP_NAME.dmg"
-
-          xcrun stapler staple "$APP_PATH"
-          xcrun stapler staple "$DMG_PATH"
-
-          xcrun stapler validate "$APP_PATH"
-          xcrun stapler validate "$DMG_PATH"
-
-      - name: Upload Artifacts
+      - name: upload artifacts macOS
+        if: matrix.platform == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.os }}-build
-          path: |
-            build/bin/*.exe
-            build/bin/*.dmg
-            build/bin/*.zip
-            build/bin/BingPaperDesktop
+          name: BingPaperDesktop-macos
+          path: build/bin/*
+
+      - name: upload artifacts windows
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: BingPaperDesktop-windows
+          path: build/bin/*
 
   release:
-    needs: build
+    needs: package
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Organize artifacts
-        run: |
-          mkdir -p release_assets
-          find artifacts -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.zip" -o -name "BingPaperDesktop" \) -exec cp {} release_assets/ \;
-          ls -R release_assets
-
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          files: |
+            artifacts/BingPaperDesktop-macos/*
+            artifacts/BingPaperDesktop-windows/*
           generate_release_notes: true
-          files: release_assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
