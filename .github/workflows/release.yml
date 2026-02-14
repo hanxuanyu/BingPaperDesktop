@@ -74,11 +74,13 @@ jobs:
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
           echo "Importing p12..."
-          echo "$MACOS_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          printf "%s" "$MACOS_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
           security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN_PATH" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
 
           echo "Configure keychain search list..."
-          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          # 获取当前 keychain 列表并添加新的 keychain，避免覆盖默认列表导致系统工具崩溃
+          ORIGINAL_KEYCHAINS=$(security list-keychains -d user | xargs)
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $ORIGINAL_KEYCHAINS
 
           echo "Allow codesign to access key without UI..."
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -94,8 +96,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/asc"
-          echo "$ASC_API_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/asc/AuthKey.p8"
+          printf "%s" "$ASC_API_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/asc/AuthKey.p8"
           chmod 600 "$RUNNER_TEMP/asc/AuthKey.p8"
+          if [ ! -s "$RUNNER_TEMP/asc/AuthKey.p8" ]; then
+            echo "Error: AuthKey.p8 is empty"
+            exit 1
+          fi
 
       - name: macOS - Codesign .app (hardened runtime)
         if: matrix.os == 'macos-latest'
@@ -172,27 +178,39 @@ jobs:
         env:
           ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
           ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+          MACOS_TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
         run: |
           set -euo pipefail
 
           APP_NAME="BingPaperDesktop"
-          OUTPUT_DIR="build/bin"
+          OUTPUT_DIR="$(pwd)/build/bin"
           DMG_PATH="$OUTPUT_DIR/$APP_NAME.dmg"
           ZIP_PATH="$OUTPUT_DIR/${APP_NAME}-macOS.zip"
 
+          if [ ! -f "$DMG_PATH" ]; then
+            echo "DMG not found at $DMG_PATH"
+            exit 1
+          fi
+
           echo "Notarizing DMG..."
-          xcrun notarytool submit "$DMG_PATH" \
-            --key "$RUNNER_TEMP/asc/AuthKey.p8" \
-            --key-id "$ASC_API_KEY_ID" \
-            --issuer "$ASC_API_ISSUER_ID" \
+          NOTARY_ARGS=(
+            submit "$DMG_PATH"
+            --key "$RUNNER_TEMP/asc/AuthKey.p8"
+            --key-id "$ASC_API_KEY_ID"
+            --issuer "$ASC_API_ISSUER_ID"
             --wait
+          )
+
+          # 如果定义了 MACOS_TEAM_ID，则添加该参数
+          if [ -n "${MACOS_TEAM_ID:-}" ]; then
+            NOTARY_ARGS+=(--team-id "$MACOS_TEAM_ID")
+          fi
+
+          xcrun notarytool "${NOTARY_ARGS[@]}"
 
           echo "Notarizing ZIP..."
-          xcrun notarytool submit "$ZIP_PATH" \
-            --key "$RUNNER_TEMP/asc/AuthKey.p8" \
-            --key-id "$ASC_API_KEY_ID" \
-            --issuer "$ASC_API_ISSUER_ID" \
-            --wait
+          NOTARY_ARGS[1]="$ZIP_PATH"
+          xcrun notarytool "${NOTARY_ARGS[@]}"
 
       - name: macOS - Staple notarization ticket
         if: matrix.os == 'macos-latest'
