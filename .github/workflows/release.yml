@@ -53,10 +53,10 @@ jobs:
           fi
           wails build -platform ${{ matrix.platform == 'windows-latest' && 'windows/amd64' || 'darwin/universal' }}
 
-      - name: MacOS download gon for code signing and app notarization
+      - name: MacOS download tools for code signing and app notarization
         if: matrix.platform == 'macos-latest'
         run: |
-          brew install Bearer/tap/gon
+          brew install Bearer/tap/gon create-dmg
 
       - name: Import Code-Signing Certificates for macOS
         if: matrix.platform == 'macos-latest'
@@ -105,6 +105,29 @@ jobs:
             echo "Gon failed after $MAX_RETRIES attempts."
             exit 1
           fi
+
+          # 手动创建 ZIP 包，确保包含 .app 目录本身而不是其内部内容
+          echo "Generating professional ZIP"
+          rm -f ./build/bin/BingPaperDesktop_macos.zip
+          ditto -c -k --sequesterRsrc --keepParent "./build/bin/BingPaperDesktop.app" "./build/bin/BingPaperDesktop_macos.zip"
+
+          # 使用 create-dmg 生成带有 Applications 快捷方式的 DMG
+          echo "Generating professional DMG"
+          rm -f ./build/bin/BingPaperDesktop_macos.dmg
+          create-dmg \
+            --volname "BingPaperDesktop" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "BingPaperDesktop.app" 175 190 \
+            --hide-extension "BingPaperDesktop.app" \
+            --app-drop-link 425 190 \
+            "./build/bin/BingPaperDesktop_macos.dmg" \
+            "./build/bin/BingPaperDesktop.app"
+
+          # 对生成的 DMG 进行签名和公证（再次运行 gon，它会识别到 DMG 已存在并进行处理）
+          # 或者直接使用 gon 的 notarize 功能
+          gon -log-level=info ./build/darwin/gon-sign.json
           
           ls -l ./build/bin/
 
