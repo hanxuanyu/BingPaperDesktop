@@ -1,9 +1,10 @@
+
 name: Release
 
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
   contents: write
@@ -15,15 +16,12 @@ jobs:
         include:
           - os: windows-latest
             platform: windows/amd64
-            artifact: BingPaperDesktop.exe
             args: ""
           - os: macos-latest
             platform: darwin/universal
-            artifact: BingPaperDesktop.dmg
             args: ""
           - os: ubuntu-latest
             platform: linux/amd64
-            artifact: BingPaperDesktop
             args: -tags webkit2_41
 
     runs-on: ${{ matrix.os }}
@@ -34,12 +32,12 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: "1.23"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
       - name: Install dependencies (Linux)
         if: matrix.os == 'ubuntu-latest'
@@ -55,26 +53,170 @@ jobs:
         run: |
           wails build -platform ${{ matrix.platform }} ${{ matrix.args }}
 
-      - name: Prepare Artifacts (macOS)
+      # -----------------------------
+      # macOS: Sign + Notarize + Package
+      # -----------------------------
+      - name: macOS - Import signing cert & setup keychain
         if: matrix.os == 'macos-latest'
+        shell: bash
+        env:
+          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
         run: |
+          set -euo pipefail
+
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+
+          echo "Creating temporary keychain..."
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "Importing p12..."
+          echo "$MACOS_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN_PATH" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+
+          echo "Configure keychain search list..."
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+
+          echo "Allow codesign to access key without UI..."
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "Available identities:"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+      - name: macOS - Prepare notarization API key
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        env:
+          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/asc"
+          echo "$ASC_API_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/asc/AuthKey.p8"
+          chmod 600 "$RUNNER_TEMP/asc/AuthKey.p8"
+
+      - name: macOS - Codesign .app (hardened runtime)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        env:
+          MACOS_CERT_IDENTITY: ${{ secrets.MACOS_CERT_IDENTITY }}
+        run: |
+          set -euo pipefail
+
           APP_NAME="BingPaperDesktop"
           OUTPUT_DIR="build/bin"
           APP_PATH="$OUTPUT_DIR/$APP_NAME.app"
-          
-          # Create DMG
-          DMG_TEMP="build/bin/dmg_temp"
+
+          if [ ! -d "$APP_PATH" ]; then
+            echo "App not found at $APP_PATH"
+            ls -la "$OUTPUT_DIR"
+            exit 1
+          fi
+
+          echo "Signing app: $APP_PATH"
+          /usr/bin/codesign --force --options runtime --timestamp \
+            --sign "$MACOS_CERT_IDENTITY" \
+            --deep "$APP_PATH"
+
+          echo "Verify codesign..."
+          /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+
+          echo "Gatekeeper assess (pre-notarize may still fail, but check anyway)..."
+          /usr/sbin/spctl --assess --type execute --verbose=4 "$APP_PATH" || true
+
+      - name: macOS - Create DMG + ZIP
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_NAME="BingPaperDesktop"
+          OUTPUT_DIR="build/bin"
+          APP_PATH="$OUTPUT_DIR/$APP_NAME.app"
+
+          # DMG
+          DMG_TEMP="$RUNNER_TEMP/dmg_temp"
           rm -rf "$DMG_TEMP"
           mkdir -p "$DMG_TEMP"
           cp -R "$APP_PATH" "$DMG_TEMP/"
           ln -s /Applications "$DMG_TEMP/Applications"
           hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_TEMP" -ov -format UDZO "$OUTPUT_DIR/$APP_NAME.dmg"
           rm -rf "$DMG_TEMP"
-          
-          # Create ZIP of .app
-          cd "$OUTPUT_DIR"
-          zip -r "${APP_NAME}-macOS.zip" "${APP_NAME}.app"
 
+          # ZIP (better than zip -r for mac app distribution)
+          rm -f "$OUTPUT_DIR/${APP_NAME}-macOS.zip"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$OUTPUT_DIR/${APP_NAME}-macOS.zip"
+
+          ls -la "$OUTPUT_DIR"
+
+      - name: macOS - (Recommended) Codesign DMG
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        env:
+          MACOS_CERT_IDENTITY: ${{ secrets.MACOS_CERT_IDENTITY }}
+        run: |
+          set -euo pipefail
+          APP_NAME="BingPaperDesktop"
+          OUTPUT_DIR="build/bin"
+          DMG_PATH="$OUTPUT_DIR/$APP_NAME.dmg"
+
+          echo "Signing DMG: $DMG_PATH"
+          /usr/bin/codesign --force --timestamp --sign "$MACOS_CERT_IDENTITY" "$DMG_PATH"
+          /usr/bin/codesign --verify --verbose=2 "$DMG_PATH"
+
+      - name: macOS - Notarize DMG and ZIP (wait)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+
+          APP_NAME="BingPaperDesktop"
+          OUTPUT_DIR="build/bin"
+          DMG_PATH="$OUTPUT_DIR/$APP_NAME.dmg"
+          ZIP_PATH="$OUTPUT_DIR/${APP_NAME}-macOS.zip"
+
+          echo "Notarizing DMG..."
+          xcrun notarytool submit "$DMG_PATH" \
+            --key "$RUNNER_TEMP/asc/AuthKey.p8" \
+            --key-id "$ASC_API_KEY_ID" \
+            --issuer "$ASC_API_ISSUER_ID" \
+            --wait
+
+          echo "Notarizing ZIP..."
+          xcrun notarytool submit "$ZIP_PATH" \
+            --key "$RUNNER_TEMP/asc/AuthKey.p8" \
+            --key-id "$ASC_API_KEY_ID" \
+            --issuer "$ASC_API_ISSUER_ID" \
+            --wait
+
+      - name: macOS - Staple notarization ticket
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_NAME="BingPaperDesktop"
+          OUTPUT_DIR="build/bin"
+          APP_PATH="$OUTPUT_DIR/$APP_NAME.app"
+          DMG_PATH="$OUTPUT_DIR/$APP_NAME.dmg"
+
+          echo "Stapling app..."
+          xcrun stapler staple "$APP_PATH"
+
+          echo "Stapling dmg..."
+          xcrun stapler staple "$DMG_PATH"
+
+          echo "Validate staple..."
+          xcrun stapler validate "$APP_PATH"
+          xcrun stapler validate "$DMG_PATH"
+
+          echo "Final Gatekeeper assess..."
+          /usr/sbin/spctl --assess --type execute --verbose=4 "$APP_PATH" || true
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
