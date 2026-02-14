@@ -32,6 +32,8 @@ function App() {
   const [config, setConfig] = useState<store.Config | null>(null);
   const [currentImage, setCurrentImage] = useState<store.HistoryItem | null>(null);
   const [currentImageDataURL, setCurrentImageDataURL] = useState<string>('');
+  const [prevImageDataURL, setPrevImageDataURL] = useState<string>('');
+  const [isImgLoading, setIsImgLoading] = useState(false);
   const [history, setHistory] = useState<store.HistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [wallpaperSupport, setWallpaperSupport] = useState<any>(true);
@@ -39,6 +41,12 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const isManualFetching = useRef(false);
+  const configRef = useRef<store.Config | null>(null);
+
+  // Sync config to ref for event listeners
+  useEffect(() => {
+    configRef.current = config;
+  }, [config]);
 
   // Load configuration
   const loadConfig = useCallback(async () => {
@@ -74,7 +82,8 @@ function App() {
         setCurrentImage(result.item);
         loadHistory();
         if (!silent) {
-          toast.success('已获取今日壁纸: ' + result.item.title);
+          const prefix = config?.random_history ? '当前为随机壁纸: ' : '已获取今日壁纸: ';
+          toast.success(prefix + result.item.title);
         }
       } else {
         toast.error('获取今日壁纸失败: ' + result.error);
@@ -85,7 +94,7 @@ function App() {
       setLoading(false);
       isManualFetching.current = false;
     }
-  }, [loadHistory]);
+  }, [loadHistory, config?.random_history]);
 
   // Initial load
   useEffect(() => {
@@ -100,7 +109,8 @@ function App() {
       if (item) {
         setCurrentImage((prev) => {
           if (prev && prev.key !== item.key && !isManualFetching.current) {
-            toast.info('壁纸已同步: ' + item.title);
+            const prefix = configRef.current?.random_history ? '当前为随机壁纸: ' : '壁纸已同步: ';
+            toast.info(prefix + item.title);
           }
           if (!prev || prev.key !== item.key) {
             loadHistory();
@@ -109,6 +119,12 @@ function App() {
         });
       }
     });
+
+    const handleFocus = () => {
+      // 当窗口重新获得焦点时，清除所有积压的通知
+      toast.dismiss();
+    };
+    window.addEventListener('focus', handleFocus);
 
     // Watermark rendering listener
     const unregister = EventsOn('render-watermark', async (data: any) => {
@@ -124,6 +140,7 @@ function App() {
     return () => {
       unregister();
       unregisterSync();
+      window.removeEventListener('focus', handleFocus);
     };
   }, []);
 
@@ -133,7 +150,27 @@ function App() {
       const path = (config?.overlay_metadata && currentImage.watermark_path) 
         ? currentImage.watermark_path 
         : currentImage.image_path;
-      GetImageDataURL(path).then(setCurrentImageDataURL).catch(console.error);
+      
+      GetImageDataURL(path).then(async (url) => {
+        if (url === currentImageDataURL) return;
+
+        // 预加载图片确保切换时不闪烁
+        const img = new Image();
+        img.src = url;
+        setIsImgLoading(true);
+        try {
+          await img.decode();
+        } catch (e) {
+          console.warn("Image decode failed", e);
+        }
+
+        setPrevImageDataURL(currentImageDataURL);
+        setCurrentImageDataURL(url);
+        setIsImgLoading(false);
+      }).catch(console.error);
+    } else {
+      setPrevImageDataURL(currentImageDataURL);
+      setCurrentImageDataURL('');
     }
   }, [currentImage, config?.overlay_metadata]);
 
@@ -239,9 +276,19 @@ function App() {
   return (
     <TooltipProvider>
       <div className="relative h-full w-full bg-slate-950 overflow-hidden font-sans">
-        {/* Background Image */}
+        {/* Background Image Layers */}
+        {prevImageDataURL && (
+          <div 
+            className="absolute inset-0 bg-cover bg-center"
+            style={{ 
+              backgroundImage: `url(${prevImageDataURL})`,
+              filter: 'brightness(0.7)'
+            }}
+          />
+        )}
         <div 
-          className="absolute inset-0 bg-cover bg-center transition-all duration-700 ease-in-out"
+          key={currentImageDataURL}
+          className="absolute inset-0 bg-cover bg-center transition-opacity duration-700 ease-in-out animate-in fade-in"
           style={{ 
             backgroundImage: currentImageDataURL ? `url(${currentImageDataURL})` : 'none',
             filter: 'brightness(0.7)'

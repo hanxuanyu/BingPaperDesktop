@@ -336,14 +336,15 @@ func (a *App) ApplyHistory(key string, preferWatermarked bool) error {
 	}
 
 	absPath := filepath.Join(store.GetBaseDir(), path)
-	slog.Info("Applying wallpaper", "path", absPath)
-	if err := wallpaper.Set(absPath); err != nil {
-		return err
-	}
 
 	// Update last fetch and notify frontend
 	a.lastFetch = &CurrentResult{Item: *target, Success: true}
 	runtime.EventsEmit(a.ctx, "current-image-changed", *target)
+
+	slog.Info("Applying wallpaper", "path", absPath)
+	if err := wallpaper.Set(absPath); err != nil {
+		return err
+	}
 
 	return nil
 }
