@@ -84,34 +84,23 @@ jobs:
 
           echo "Signing Package"
           # 使用 sed 替换配置文件中的占位符
-          sed -i '' "s/APPLE_BUNDLE_ID/${{ secrets.APPLE_BUNDLE_ID || 'com.wails.BingPaperDesktop' }}/g" ./build/darwin/gon-sign.json
-          sed -i '' "s/APPLE_ID_USER/${{ secrets.APPLE_ID_USER }}/g" ./build/darwin/gon-sign.json
-          sed -i '' "s/APPLE_PASSWORD/${{ secrets.APPLE_PASSWORD }}/g" ./build/darwin/gon-sign.json
-          sed -i '' "s/APPLE_PROVIDER/${{ secrets.APPLE_PROVIDER }}/g" ./build/darwin/gon-sign.json
-          sed -i '' "s/APPLE_IDENTITY/${{ secrets.APPLE_IDENTITY }}/g" ./build/darwin/gon-sign.json
+          sed -i '' "s/APPLE_BUNDLE_ID/${{ secrets.APPLE_BUNDLE_ID || 'com.wails.BingPaperDesktop' }}/g" ./build/darwin/gon-sign-app.json
+          sed -i '' "s/APPLE_IDENTITY/${{ secrets.APPLE_IDENTITY }}/g" ./build/darwin/gon-sign-app.json
           
-          # 增加重试逻辑以应对网络波动导致的公证失败
-          MAX_RETRIES=3
-          COUNT=0
-          until [ $COUNT -ge $MAX_RETRIES ]
-          do
-            gon -log-level=info ./build/darwin/gon-sign.json && break
-            COUNT=$[$COUNT+1]
-            echo "Gon failed, retrying in 30 seconds... ($COUNT/$MAX_RETRIES)"
-            sleep 30
-          done
+          sed -i '' "s/APPLE_BUNDLE_ID/${{ secrets.APPLE_BUNDLE_ID || 'com.wails.BingPaperDesktop' }}/g" ./build/darwin/gon-notarize.json
+          sed -i '' "s/APPLE_ID_USER/${{ secrets.APPLE_ID_USER }}/g" ./build/darwin/gon-notarize.json
+          sed -i '' "s/APPLE_PASSWORD/${{ secrets.APPLE_PASSWORD }}/g" ./build/darwin/gon-notarize.json
+          sed -i '' "s/APPLE_PROVIDER/${{ secrets.APPLE_PROVIDER }}/g" ./build/darwin/gon-notarize.json
+          
+          # 1. 签名 .app 
+          gon -log-level=info ./build/darwin/gon-sign-app.json
 
-          if [ $COUNT -eq $MAX_RETRIES ]; then
-            echo "Gon failed after $MAX_RETRIES attempts."
-            exit 1
-          fi
-
-          # 手动创建 ZIP 包，确保包含 .app 目录本身而不是其内部内容
+          # 2. 手动创建 ZIP 包
           echo "Generating professional ZIP"
           rm -f ./build/bin/BingPaperDesktop_macos.zip
           ditto -c -k --sequesterRsrc --keepParent "./build/bin/BingPaperDesktop.app" "./build/bin/BingPaperDesktop_macos.zip"
 
-          # 使用 create-dmg 生成带有 Applications 快捷方式的 DMG
+          # 3. 使用 create-dmg 生成 DMG
           echo "Generating professional DMG"
           rm -f ./build/bin/BingPaperDesktop_macos.dmg
           create-dmg \
@@ -125,9 +114,21 @@ jobs:
             "./build/bin/BingPaperDesktop_macos.dmg" \
             "./build/bin/BingPaperDesktop.app"
 
-          # 对生成的 DMG 进行签名和公证（再次运行 gon，它会识别到 DMG 已存在并进行处理）
-          # 或者直接使用 gon 的 notarize 功能
-          gon -log-level=info ./build/darwin/gon-sign.json
+          # 4. 增加重试逻辑以应对网络波动导致的公证失败
+          MAX_RETRIES=3
+          COUNT=0
+          until [ $COUNT -ge $MAX_RETRIES ]
+          do
+            gon -log-level=info ./build/darwin/gon-notarize.json && break
+            COUNT=$[$COUNT+1]
+            echo "Gon failed, retrying in 30 seconds... ($COUNT/$MAX_RETRIES)"
+            sleep 30
+          done
+
+          if [ $COUNT -eq $MAX_RETRIES ]; then
+            echo "Gon failed after $MAX_RETRIES attempts."
+            exit 1
+          fi
           
           ls -l ./build/bin/
 

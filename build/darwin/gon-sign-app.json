@@ -1,0 +1,7 @@
+{
+  "source": ["./build/bin/BingPaperDesktop.app"],
+  "bundle_id": "APPLE_BUNDLE_ID",
+  "sign": {
+    "application_identity": "APPLE_IDENTITY"
+  }
+}
