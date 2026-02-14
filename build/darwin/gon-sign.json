@@ -1,12 +1,15 @@
 {
   "source": ["./build/bin/BingPaperDesktop.app"],
   "bundle_id": "APPLE_BUNDLE_ID",
-  "apple_id": {
+  "sign": {
+    "application_identity": "APPLE_IDENTITY"
+  },
+  "notarize": {
     "username": "APPLE_ID_USER",
     "password": "APPLE_PASSWORD",
     "provider": "APPLE_PROVIDER"
   },
-  "sign": {
-    "application_identity": "APPLE_IDENTITY"
+  "zip": {
+    "output_path": "./build/bin/BingPaperDesktop_macos.zip"
   }
 }

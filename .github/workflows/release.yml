@@ -90,6 +90,7 @@ jobs:
           sed -i '' "s/APPLE_PROVIDER/${{ secrets.APPLE_PROVIDER }}/g" ./build/darwin/gon-sign.json
           sed -i '' "s/APPLE_IDENTITY/${{ secrets.APPLE_IDENTITY }}/g" ./build/darwin/gon-sign.json
           gon -log-level=info ./build/darwin/gon-sign.json
+          ls -l ./build/bin/
 
       # - name: Sign Windows binaries
       #   if: matrix.platform == 'windows-latest'
