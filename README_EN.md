@@ -63,6 +63,35 @@ You can use the scripts in the `script` directory for quick building:
 
 Build artifacts will be located in the `build/bin` directory.
 
+### 🔐 CI/CD Release Configuration
+
+This project uses GitHub Actions for automated building, signing, and releasing. For the `release` workflow to function correctly, you need to configure the following Secrets in **Settings > Secrets and variables > Actions**:
+
+#### macOS Signing & Notarization (Required)
+
+| Secret Name | Description | How to Obtain |
+| :--- | :--- | :--- |
+| `APPLE_ID_USER` | **Apple ID Account (Email)** | Your Apple Developer account email. |
+| `APPLE_PASSWORD` | **App-Specific Password** | Login to [appleid.apple.com](https://appleid.apple.com/), generate it in "Sign-In and Security". |
+| `APPLE_PROVIDER` | **Team ID** | Find it in the [Apple Developer Portal](https://developer.apple.com/account/). |
+| `APPLE_IDENTITY` | **Certificate Identity** | Run `security find-identity -v -p codesigning`, e.g., `Developer ID Application: Your Name (ABC123XYZ)`. |
+| `APPLE_DEVELOPER_CERTIFICATE_P12_BASE64` | **Base64 encoded .p12 certificate** | Export cert and run `base64 -i cert.p12 \| pbcopy`. |
+| `APPLE_DEVELOPER_CERTIFICATE_PASSWORD` | **.p12 certificate password** | The password you set during export. |
+| `AUTHOR_NAME` | **Author Name** | Used to replace AUTHOR_NAME in `wails.json`. |
+| `AUTHOR_EMAIL` | **Author Email** | Used to replace AUTHOR_EMAIL in `wails.json`. |
+
+#### macOS Signing & Notarization (Optional)
+
+| Secret Name | Description | Default Value |
+| :--- | :--- | :--- |
+| `APPLE_BUNDLE_ID` | **Application Bundle ID** | `com.wails.BingPaperDesktop` |
+
+#### Windows Signing (Optional)
+
+| Secret Name | Description | How to Obtain |
+| :--- | :--- | :--- |
+| `WIN_SIGNING_CERT` | **Base64 encoded PFX certificate** | Run `certutil -encode .\cert.pfx cert.txt` and copy content. |
+| `WIN_SIGNING_CERT_PASSWORD` | **Certificate password** | The password for the certificate. |
 
 ### 📄 License
 

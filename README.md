@@ -63,6 +63,35 @@
 
 构建产物将存放在 `build/bin` 目录下。
 
+### 🔐 CI/CD 发布配置
+
+本项目使用 GitHub Actions 自动进行构建、签名和发布。为了使 `release` 工作流正常运行，你需要在 GitHub 项目的 **Settings > Secrets and variables > Actions** 中配置以下 Secrets：
+
+#### macOS 签名与公证 (必填)
+
+| Secret 名称 | 说明 | 获取方式 |
+| :--- | :--- | :--- |
+| `APPLE_ID_USER` | **Apple ID 账号 (邮箱)** | 你的 Apple Developer 账号邮箱。 |
+| `APPLE_PASSWORD` | **App 专用密码** | 登录 [appleid.apple.com](https://appleid.apple.com/)，在“登录和安全”中生成。 |
+| `APPLE_PROVIDER` | **团队 ID (Team ID)** | 登录 [Apple Developer Portal](https://developer.apple.com/account/) 查看。 |
+| `APPLE_IDENTITY` | **证书标识符** | 运行 `security find-identity -v -p codesigning` 获取，如 `Developer ID Application: Your Name (ABC123XYZ)`。 |
+| `APPLE_DEVELOPER_CERTIFICATE_P12_BASE64` | **Base64 编码的 .p12 证书** | 导出证书并运行 `base64 -i cert.p12 \| pbcopy`。 |
+| `APPLE_DEVELOPER_CERTIFICATE_PASSWORD` | **.p12 证书导出密码** | 导出证书时设置的密码。 |
+| `AUTHOR_NAME` | **作者名称** | 用于替换 `wails.json` 中的作者名。 |
+| `AUTHOR_EMAIL` | **作者邮箱** | 用于替换 `wails.json` 中的作者邮箱。 |
+
+#### macOS 签名与公证 (可选)
+
+| Secret 名称 | 说明 | 默认值 |
+| :--- | :--- | :--- |
+| `APPLE_BUNDLE_ID` | **应用包名 (Bundle ID)** | `com.wails.BingPaperDesktop` |
+
+#### Windows 签名 (可选)
+
+| Secret 名称 | 说明 | 获取方式 |
+| :--- | :--- | :--- |
+| `WIN_SIGNING_CERT` | **Base64 编码的 PFX 证书** | 运行 `certutil -encode .\cert.pfx cert.txt` 并复制内容。 |
+| `WIN_SIGNING_CERT_PASSWORD` | **证书解密密码** | 证书的密码。 |
 
 ### 📄 开源协议
 

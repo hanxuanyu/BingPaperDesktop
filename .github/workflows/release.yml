@@ -35,7 +35,22 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
       - name: Build Wails app
+        shell: bash
         run: |
+          # 检查必填 Secrets
+          if [[ -z "${{ secrets.AUTHOR_NAME }}" || -z "${{ secrets.AUTHOR_EMAIL }}" ]]; then
+            echo "Error: AUTHOR_NAME or AUTHOR_EMAIL secret is not set."
+            exit 1
+          fi
+
+          # 替换 wails.json 中的个人信息
+          if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
+            sed -i '' "s/AUTHOR_NAME/${{ secrets.AUTHOR_NAME }}/g" wails.json
+            sed -i '' "s/AUTHOR_EMAIL/${{ secrets.AUTHOR_EMAIL }}/g" wails.json
+          else
+            sed -i "s/AUTHOR_NAME/${{ secrets.AUTHOR_NAME }}/g" wails.json
+            sed -i "s/AUTHOR_EMAIL/${{ secrets.AUTHOR_EMAIL }}/g" wails.json
+          fi
           wails build -platform ${{ matrix.platform == 'windows-latest' && 'windows/amd64' || 'darwin/universal' }}
 
       - name: MacOS download gon for code signing and app notarization
@@ -45,6 +60,14 @@ jobs:
 
       - name: Import Code-Signing Certificates for macOS
         if: matrix.platform == 'macos-latest'
+        run: |
+          # 检查 P12 证书相关的 Secrets
+          if [[ -z "${{ secrets.APPLE_DEVELOPER_CERTIFICATE_P12_BASE64 }}" || -z "${{ secrets.APPLE_DEVELOPER_CERTIFICATE_PASSWORD }}" ]]; then
+            echo "Error: APPLE_DEVELOPER_CERTIFICATE_P12_BASE64 or APPLE_DEVELOPER_CERTIFICATE_PASSWORD is not set."
+            exit 1
+          fi
+      - name: Import Code-Signing Certificates for macOS (Action)
+        if: matrix.platform == 'macos-latest'
         uses: Apple-Actions/import-codesign-certs@v1
         with:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_P12_BASE64 }}
@@ -53,26 +76,35 @@ jobs:
       - name: Sign our macOS binary
         if: matrix.platform == 'macos-latest'
         run: |
+          # 检查必填 Secrets
+          if [[ -z "${{ secrets.APPLE_ID_USER }}" || -z "${{ secrets.APPLE_PASSWORD }}" || -z "${{ secrets.APPLE_PROVIDER }}" || -z "${{ secrets.APPLE_IDENTITY }}" ]]; then
+            echo "Error: One or more Apple signing secrets are missing."
+            exit 1
+          fi
+
           echo "Signing Package"
           # 使用 sed 替换配置文件中的占位符
+          sed -i '' "s/APPLE_BUNDLE_ID/${{ secrets.APPLE_BUNDLE_ID || 'com.wails.BingPaperDesktop' }}/g" ./build/darwin/gon-sign.json
+          sed -i '' "s/APPLE_ID_USER/${{ secrets.APPLE_ID_USER }}/g" ./build/darwin/gon-sign.json
           sed -i '' "s/APPLE_PASSWORD/${{ secrets.APPLE_PASSWORD }}/g" ./build/darwin/gon-sign.json
           sed -i '' "s/APPLE_PROVIDER/${{ secrets.APPLE_PROVIDER }}/g" ./build/darwin/gon-sign.json
+          sed -i '' "s/APPLE_IDENTITY/${{ secrets.APPLE_IDENTITY }}/g" ./build/darwin/gon-sign.json
           gon -log-level=info ./build/darwin/gon-sign.json
 
-      - name: Sign Windows binaries
-        if: matrix.platform == 'windows-latest'
-        shell: powershell
-        run: |
-          echo "Creating certificate file"
-          New-Item -ItemType directory -Path certificate
-          Set-Content -Path certificate\certificate.txt -Value '${{ secrets.WIN_SIGNING_CERT }}'
-          certutil -decode certificate\certificate.txt certificate\certificate.pfx
-          echo "Signing our binaries"
-          \$signtool = "C:/Program Files (x86)/Windows Kits/10/bin/10.0.17763.0/x86/signtool.exe"
-          if (!(Test-Path \$signtool)) {
-              \$signtool = "signtool.exe"
-          }
-          & \$signtool sign /fd sha256 /tr http://ts.ssl.com /f certificate\certificate.pfx /p '${{ secrets.WIN_SIGNING_CERT_PASSWORD }}' .\build\bin\BingPaperDesktop.exe
+      # - name: Sign Windows binaries
+      #   if: matrix.platform == 'windows-latest'
+      #   shell: powershell
+      #   run: |
+      #     echo "Creating certificate file"
+      #     New-Item -ItemType directory -Path certificate
+      #     Set-Content -Path certificate\certificate.txt -Value '${{ secrets.WIN_SIGNING_CERT }}'
+      #     certutil -decode certificate\certificate.txt certificate\certificate.pfx
+      #     echo "Signing our binaries"
+      #     \$signtool = "C:/Program Files (x86)/Windows Kits/10/bin/10.0.17763.0/x86/signtool.exe"
+      #     if (!(Test-Path \$signtool)) {
+      #         \$signtool = "signtool.exe"
+      #     }
+      #     & \$signtool sign /fd sha256 /tr http://ts.ssl.com /f certificate\certificate.pfx /p '${{ secrets.WIN_SIGNING_CERT_PASSWORD }}' .\build\bin\BingPaperDesktop.exe
 
       - name: upload artifacts macOS
         if: matrix.platform == 'macos-latest'
