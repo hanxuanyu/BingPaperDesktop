@@ -8,6 +8,10 @@
     "path": "./build/bin/BingPaperDesktop_macos.zip",
     "bundle_id": "APPLE_BUNDLE_ID",
     "staple": true
+  }, {
+    "path": "./build/bin/BingPaperDesktop_macos.dmg",
+    "bundle_id": "APPLE_BUNDLE_ID",
+    "staple": true
   }],
   "apple_id": {
     "username": "APPLE_ID_USER",
@@ -16,5 +20,9 @@
   },
   "zip": {
     "output_path": "./build/bin/BingPaperDesktop_macos.zip"
+  },
+  "dmg": {
+    "output_path": "./build/bin/BingPaperDesktop_macos.dmg",
+    "volume_name": "BingPaperDesktop"
   }
 }
