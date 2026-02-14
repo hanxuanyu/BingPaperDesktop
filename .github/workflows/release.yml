@@ -17,7 +17,7 @@ jobs:
           - os: windows-latest
             platform: windows/amd64
             args: ""
-          - os: macos-latest
+          - os: macos-13
             platform: darwin/universal
             args: ""
           - os: ubuntu-latest
@@ -57,7 +57,7 @@ jobs:
       # macOS: Sign + Notarize + Package
       # -----------------------------
       - name: macOS - Import signing cert & setup keychain
-        if: matrix.os == 'macos-latest'
+        if: runner.os == 'macOS'
         shell: bash
         env:
           MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
@@ -79,10 +79,9 @@ jobs:
 
           echo "Configure keychain search list..."
           # macOS 14+ 对 keychain 搜索列表非常敏感。
-          # 我们确保添加新 keychain 的同时不移除默认的 login keychain。
-          # 使用 sed 移除引号以处理可能的路径格式问题。
-          ORIGINAL_KEYCHAINS=$(security list-keychains -d user | sed 's/\"//g')
-          security list-keychains -d user -s "$KEYCHAIN_PATH" $ORIGINAL_KEYCHAINS
+          # 使用 xargs 清理 security list-keychains 的输出，确保没有多余的引号或空格。
+          CURRENT_KEYCHAINS=$(security list-keychains -d user | xargs)
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $CURRENT_KEYCHAINS
 
           echo "Allow codesign to access key without UI..."
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -91,7 +90,7 @@ jobs:
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
       - name: macOS - Prepare notarization API key
-        if: matrix.os == 'macos-latest'
+        if: runner.os == 'macOS'
         shell: bash
         env:
           ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
@@ -113,7 +112,7 @@ jobs:
           fi
 
       - name: macOS - Codesign .app (hardened runtime)
-        if: matrix.os == 'macos-latest'
+        if: runner.os == 'macOS'
         shell: bash
         env:
           MACOS_CERT_IDENTITY: ${{ secrets.MACOS_CERT_IDENTITY }}
@@ -142,7 +141,7 @@ jobs:
           /usr/sbin/spctl --assess --type execute --verbose=4 "$APP_PATH" || true
 
       - name: macOS - Create DMG + ZIP
-        if: matrix.os == 'macos-latest'
+        if: runner.os == 'macOS'
         shell: bash
         run: |
           set -euo pipefail
@@ -167,7 +166,7 @@ jobs:
           ls -la "$OUTPUT_DIR"
 
       - name: macOS - (Recommended) Codesign DMG
-        if: matrix.os == 'macos-latest'
+        if: runner.os == 'macOS'
         shell: bash
         env:
           MACOS_CERT_IDENTITY: ${{ secrets.MACOS_CERT_IDENTITY }}
@@ -182,7 +181,7 @@ jobs:
           /usr/bin/codesign --verify --verbose=2 "$DMG_PATH"
 
       - name: macOS - Notarize DMG and ZIP (wait)
-        if: matrix.os == 'macos-latest'
+        if: runner.os == 'macOS'
         shell: bash
         env:
           ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
@@ -216,15 +215,15 @@ jobs:
             NOTARY_ARGS+=(--team-id "$MACOS_TEAM_ID")
           fi
 
-          /usr/bin/notarytool "${NOTARY_ARGS[@]}"
+          xcrun notarytool "${NOTARY_ARGS[@]}"
 
           echo "Notarizing ZIP..."
           # 更新数组中的文件路径，保持其他参数不变
           NOTARY_ARGS[1]="$ZIP_PATH"
-          /usr/bin/notarytool "${NOTARY_ARGS[@]}"
+          xcrun notarytool "${NOTARY_ARGS[@]}"
 
       - name: macOS - Staple notarization ticket
-        if: matrix.os == 'macos-latest'
+        if: runner.os == 'macOS'
         shell: bash
         run: |
           set -euo pipefail
