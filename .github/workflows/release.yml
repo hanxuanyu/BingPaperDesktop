@@ -78,8 +78,10 @@ jobs:
           security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN_PATH" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
 
           echo "Configure keychain search list..."
-          # 获取当前 keychain 列表并添加新的 keychain，避免覆盖默认列表导致系统工具崩溃
-          ORIGINAL_KEYCHAINS=$(security list-keychains -d user | xargs)
+          # macOS 14+ 对 keychain 搜索列表非常敏感。
+          # 我们确保添加新 keychain 的同时不移除默认的 login keychain。
+          # 使用 sed 移除引号以处理可能的路径格式问题。
+          ORIGINAL_KEYCHAINS=$(security list-keychains -d user | sed 's/\"//g')
           security list-keychains -d user -s "$KEYCHAIN_PATH" $ORIGINAL_KEYCHAINS
 
           echo "Allow codesign to access key without UI..."
@@ -96,10 +98,17 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/asc"
-          printf "%s" "$ASC_API_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/asc/AuthKey.p8"
+          # 使用 tr -d '\r' 确保移除可能存在的 Windows 换行符 (CRLF)，这会导致 notarytool 崩溃
+          printf "%s" "$ASC_API_KEY_P8_BASE64" | base64 --decode | tr -d '\r' > "$RUNNER_TEMP/asc/AuthKey.p8"
           chmod 600 "$RUNNER_TEMP/asc/AuthKey.p8"
+
           if [ ! -s "$RUNNER_TEMP/asc/AuthKey.p8" ]; then
             echo "Error: AuthKey.p8 is empty"
+            exit 1
+          fi
+
+          if ! grep -q "BEGIN PRIVATE KEY" "$RUNNER_TEMP/asc/AuthKey.p8"; then
+            echo "Error: AuthKey.p8 is not a valid PEM private key"
             exit 1
           fi
 
@@ -199,6 +208,7 @@ jobs:
             --key-id "$ASC_API_KEY_ID"
             --issuer "$ASC_API_ISSUER_ID"
             --wait
+            --verbose
           )
 
           # 如果定义了 MACOS_TEAM_ID，则添加该参数
@@ -206,11 +216,12 @@ jobs:
             NOTARY_ARGS+=(--team-id "$MACOS_TEAM_ID")
           fi
 
-          xcrun notarytool "${NOTARY_ARGS[@]}"
+          /usr/bin/notarytool "${NOTARY_ARGS[@]}"
 
           echo "Notarizing ZIP..."
+          # 更新数组中的文件路径，保持其他参数不变
           NOTARY_ARGS[1]="$ZIP_PATH"
-          xcrun notarytool "${NOTARY_ARGS[@]}"
+          /usr/bin/notarytool "${NOTARY_ARGS[@]}"
 
       - name: macOS - Staple notarization ticket
         if: matrix.os == 'macos-latest'
