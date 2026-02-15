@@ -20,6 +20,7 @@ func (a *App) SetupTray(appIcon, appIconIco []byte) (func(), func()) {
 		showWindow := func() {
 			go func() {
 				if a.ctx != nil {
+					wruntime.EventsEmit(a.ctx, "prepare-show-window")
 					cfg, _ := store.LoadConfig()
 					if !cfg.HideDockIcon {
 						util.ShowDockIcon()

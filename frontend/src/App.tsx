@@ -126,6 +126,10 @@ function App() {
     };
     window.addEventListener('focus', handleFocus);
 
+    const unregisterShow = EventsOn('prepare-show-window', () => {
+      toast.dismiss();
+    });
+
     // Watermark rendering listener
     const unregister = EventsOn('render-watermark', async (data: any) => {
       try {
@@ -140,6 +144,7 @@ function App() {
     return () => {
       unregister();
       unregisterSync();
+      unregisterShow();
       window.removeEventListener('focus', handleFocus);
     };
   }, []);
