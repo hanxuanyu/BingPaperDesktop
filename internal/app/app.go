@@ -23,6 +23,26 @@ import (
 	"BingPaperDesktop/internal/wallpaper"
 )
 
+var (
+	Version    = "dev"
+	CommitHash = "none"
+	BuildTime  = "unknown"
+)
+
+type VersionInfo struct {
+	Version    string `json:"version"`
+	CommitHash string `json:"commit_hash"`
+	BuildTime  string `json:"build_time"`
+}
+
+func (a *App) GetVersionInfo() VersionInfo {
+	return VersionInfo{
+		Version:    Version,
+		CommitHash: CommitHash,
+		BuildTime:  BuildTime,
+	}
+}
+
 type App struct {
 	ctx       context.Context
 	sched     *scheduler.Scheduler
@@ -371,6 +391,10 @@ func (a *App) OpenBaseDir() error {
 
 func (a *App) OpenLogsDir() error {
 	return util.OpenFolder(store.GetLogsDir())
+}
+
+func (a *App) BrowserOpenURL(url string) error {
+	return util.OpenURL(url)
 }
 
 func (a *App) GetWallpaperSupport() (bool, string) {

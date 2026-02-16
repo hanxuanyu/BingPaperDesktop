@@ -12,6 +12,13 @@ APP_NAME="BingPaperDesktop"
 OUTPUT_DIR="build/bin"
 WAILS_BIN=$(which wails)
 
+# Versioning information
+VERSION=$(git describe --tags --always 2>/dev/null || echo "v0.0.0")
+COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_TIME=$(date "+%Y-%m-%d %H:%M:%S")
+
+LDFLAGS="-X 'BingPaperDesktop/internal/app.Version=$VERSION' -X 'BingPaperDesktop/internal/app.CommitHash=$COMMIT_HASH' -X 'BingPaperDesktop/internal/app.BuildTime=$BUILD_TIME'"
+
 # Check if Wails CLI is installed
 if [ -z "$WAILS_BIN" ]; then
     echo "Error: Wails CLI not found. Please install it first:"
@@ -33,7 +40,7 @@ build_platform() {
     local platform=$1
     local extra_args=$2
     echo "Building for $platform..."
-    $WAILS_BIN build -platform "$platform" $extra_args
+    $WAILS_BIN build -platform "$platform" -ldflags "$LDFLAGS" $extra_args
 }
 
 # Default: Clean before build

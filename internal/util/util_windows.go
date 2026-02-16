@@ -15,6 +15,10 @@ func OpenFolder(path string) error {
 	return exec.Command("explorer", path).Start()
 }
 
+func OpenURL(url string) error {
+	return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+}
+
 func HideDockIcon() {}
 func ShowDockIcon() {}
 
