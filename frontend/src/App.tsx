@@ -62,7 +62,7 @@ function App() {
   const loadHistory = useCallback(async () => {
     try {
       const items = await ListHistory();
-      setHistory(items.reverse()); // Newest first
+      setHistory(items); // Use the order from backend
     } catch (err) {
       console.error('Failed to load history:', err);
     }
