@@ -23,6 +23,9 @@ export function HistoryDrawer({
   onDeleteHistory, 
   onClearHistory 
 }: HistoryDrawerProps) {
+  // Sort history by date descending to ensure newest is always first
+  const sortedHistory = [...history].sort((a, b) => b.date.localeCompare(a.date));
+
   return (
     <Drawer shouldScaleBackground={false}>
       <DrawerTrigger asChild>
@@ -42,7 +45,7 @@ export function HistoryDrawer({
         </DrawerHeader>
         <div className="flex-1 min-h-0 overflow-y-auto">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-4 pb-12">
-              {history.map((item) => (
+              {sortedHistory.map((item) => (
                 <HistoryItemCard 
                   key={item.key} 
                   item={item} 
@@ -50,7 +53,7 @@ export function HistoryDrawer({
                   onDelete={() => onDeleteHistory(item.key)}
                 />
               ))}
-              {history.length === 0 && (
+              {sortedHistory.length === 0 && (
                 <div className="col-span-full py-20 text-center text-muted-foreground font-light">
                   暂无历史记录
                 </div>

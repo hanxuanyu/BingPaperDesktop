@@ -51,7 +51,19 @@ jobs:
             sed -i "s/AUTHOR_NAME/${{ secrets.AUTHOR_NAME }}/g" wails.json
             sed -i "s/AUTHOR_EMAIL/${{ secrets.AUTHOR_EMAIL }}/g" wails.json
           fi
-          wails build -platform ${{ matrix.platform == 'windows-latest' && 'windows/amd64' || 'darwin/universal' }}
+
+          # 计算版本信息
+          VERSION=${GITHUB_REF#refs/tags/}
+          if [[ $VERSION != v* ]]; then
+            VERSION=$(git describe --tags --always 2>/dev/null || echo "v0.0.0")
+          fi
+          COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+          BUILD_TIME=$(date -u "+%Y-%m-%d %H:%M:%S")
+          
+          LDFLAGS="-X 'BingPaperDesktop/internal/app.Version=$VERSION' -X 'BingPaperDesktop/internal/app.CommitHash=$COMMIT_HASH' -X 'BingPaperDesktop/internal/app.BuildTime=$BUILD_TIME'"
+          
+          echo "Building version: $VERSION"
+          wails build -platform ${{ matrix.platform == 'windows-latest' && 'windows/amd64' || 'darwin/universal' }} -ldflags "$LDFLAGS"
 
       - name: MacOS download tools for code signing and app notarization
         if: matrix.platform == 'macos-latest'

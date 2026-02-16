@@ -34,6 +34,22 @@ export namespace app {
 		    return a;
 		}
 	}
+	export class VersionInfo {
+	    version: string;
+	    commit_hash: string;
+	    build_time: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VersionInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.version = source["version"];
+	        this.commit_hash = source["commit_hash"];
+	        this.build_time = source["build_time"];
+	    }
+	}
 
 }
 

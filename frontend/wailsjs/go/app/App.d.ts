@@ -10,6 +10,8 @@ export function ApplyRandomHistory(arg1:boolean):Promise<void>;
 
 export function ApplyWallpaper(arg1:boolean):Promise<void>;
 
+export function BrowserOpenURL(arg1:string):Promise<void>;
+
 export function CleanupByRetainDays(arg1:number):Promise<number>;
 
 export function ClearHistory():Promise<void>;
@@ -23,6 +25,8 @@ export function GetConfig():Promise<store.Config>;
 export function GetContext():Promise<context.Context>;
 
 export function GetImageDataURL(arg1:string):Promise<string>;
+
+export function GetVersionInfo():Promise<app.VersionInfo>;
 
 export function GetWallpaperSupport():Promise<boolean|string>;
 

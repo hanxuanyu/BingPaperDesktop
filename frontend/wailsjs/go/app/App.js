@@ -14,6 +14,10 @@ export function ApplyWallpaper(arg1) {
   return window['go']['app']['App']['ApplyWallpaper'](arg1);
 }
 
+export function BrowserOpenURL(arg1) {
+  return window['go']['app']['App']['BrowserOpenURL'](arg1);
+}
+
 export function CleanupByRetainDays(arg1) {
   return window['go']['app']['App']['CleanupByRetainDays'](arg1);
 }
@@ -40,6 +44,10 @@ export function GetContext() {
 
 export function GetImageDataURL(arg1) {
   return window['go']['app']['App']['GetImageDataURL'](arg1);
+}
+
+export function GetVersionInfo() {
+  return window['go']['app']['App']['GetVersionInfo']();
 }
 
 export function GetWallpaperSupport() {

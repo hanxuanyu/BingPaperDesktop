@@ -28,6 +28,10 @@ func OpenFolder(path string) error {
 	return exec.Command("open", path).Start()
 }
 
+func OpenURL(url string) error {
+	return exec.Command("open", url).Start()
+}
+
 func HideDockIcon() {
 	C.SetActivationPolicy(C.NSApplicationActivationPolicyAccessory)
 }

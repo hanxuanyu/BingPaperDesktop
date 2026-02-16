@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings } from 'lucide-react';
+import { Settings, Info, Github } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -19,8 +19,8 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
-import { store } from '../../wailsjs/go/models';
-import { OpenDataDir, OpenLogsDir, Quit } from '../../wailsjs/go/app/App';
+import { store, app } from '../../wailsjs/go/models';
+import { OpenDataDir, OpenLogsDir, Quit, GetVersionInfo, BrowserOpenURL } from '../../wailsjs/go/app/App';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -42,10 +42,12 @@ export function SettingsDialog({
   onReset
 }: SettingsDialogProps) {
   const [localConfig, setLocalConfig] = useState<store.Config | null>(null);
+  const [versionInfo, setVersionInfo] = useState<app.VersionInfo | null>(null);
 
   useEffect(() => {
     if (open && initialConfig) {
       setLocalConfig({ ...initialConfig });
+      GetVersionInfo().then(setVersionInfo);
     }
   }, [open, initialConfig]);
 
@@ -262,6 +264,43 @@ export function SettingsDialog({
                       </div>
                     </section>
                   )}
+
+                  {/* Version Information */}
+                  <section className="space-y-4">
+                    <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">关于</h3>
+                    <div className="rounded-lg border p-4 bg-muted/20 space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-primary/10 rounded-full">
+                          <Info className="h-4 w-4 text-primary" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium">BingPaperDesktop</p>
+                          <p className="text-xs text-muted-foreground">让你的桌面每天都有新发现</p>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-2 pt-2 text-xs border-t mt-2">
+                        <div className="text-muted-foreground">当前版本</div>
+                        <div className="font-mono text-right">{versionInfo?.version || '加载中...'}</div>
+                        <div className="text-muted-foreground">构建哈希</div>
+                        <div className="font-mono text-right">{versionInfo?.commit_hash || '加载中...'}</div>
+                        <div className="text-muted-foreground">构建时间</div>
+                        <div className="text-right text-muted-foreground/80">{versionInfo?.build_time || '加载中...'}</div>
+                      </div>
+
+                      <div className="pt-2 border-t flex justify-center">
+                        <Button 
+                          variant="link" 
+                          size="sm" 
+                          className="text-xs h-7 text-muted-foreground"
+                          onClick={() => BrowserOpenURL('https://github.com/hanxuanyu/BingPaperDesktop')}
+                        >
+                          <Github className="h-3 w-3 mr-1" />
+                          GitHub 仓库
+                        </Button>
+                      </div>
+                    </div>
+                  </section>
                 </div>
             </div>
             <DialogFooter className="p-6 border-t flex flex-row justify-between items-center bg-muted/10 shrink-0">

@@ -9,6 +9,10 @@ func OpenFolder(path string) error {
 	return exec.Command("xdg-open", path).Start()
 }
 
+func OpenURL(url string) error {
+	return exec.Command("xdg-open", url).Start()
+}
+
 func HideDockIcon() {}
 func ShowDockIcon() {}
 
