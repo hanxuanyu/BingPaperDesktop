@@ -11,9 +11,48 @@ import (
 	"syscall"
 	"unsafe"
 
-	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
+
+var (
+	user32           = syscall.NewLazyDLL("user32.dll")
+	kernel32         = syscall.NewLazyDLL("kernel32.dll")
+	registerClassEx  = user32.NewProc("RegisterClassExW")
+	createWindowEx   = user32.NewProc("CreateWindowExW")
+	defWindowProc    = user32.NewProc("DefWindowProcW")
+	getMessage       = user32.NewProc("GetMessageW")
+	translateMessage = user32.NewProc("TranslateMessage")
+	dispatchMessage  = user32.NewProc("DispatchMessageW")
+	getModuleHandle  = kernel32.NewProc("GetModuleHandleW")
+)
+
+type wndClassExW struct {
+	cbSize        uint32
+	style         uint32
+	lpfnWndProc   uintptr
+	cbClsExtra    int32
+	cbWndExtra    int32
+	hInstance     syscall.Handle
+	hIcon         syscall.Handle
+	hCursor       syscall.Handle
+	hbrBackground syscall.Handle
+	lpszMenuName  *uint16
+	lpszClassName *uint16
+	hIconSm       syscall.Handle
+}
+
+type point struct {
+	x, y int32
+}
+
+type msg struct {
+	hwnd    syscall.Handle
+	message uint32
+	wParam  uintptr
+	lParam  uintptr
+	time    uint32
+	pt      point
+}
 
 func init() {
 	go startWakeListener()
@@ -24,62 +63,65 @@ func startWakeListener() {
 		WM_POWERBROADCAST      = 0x0218
 		PBT_APMRESUMEAUTOMATIC = 0x0012
 		PBT_APMRESUMESUSPEND   = 0x0007
+		HWND_MESSAGE           = syscall.Handle(^uintptr(2)) // -3
 	)
 
 	className, _ := syscall.UTF16PtrFromString("WakeListenerClass")
 	windowName, _ := syscall.UTF16PtrFromString("WakeListenerWindow")
 
-	wndProc := syscall.NewCallback(func(hwnd windows.HWND, msg uint32, wparam uintptr, lparam uintptr) uintptr {
+	wndProc := syscall.NewCallback(func(hwnd syscall.Handle, msg uint32, wparam uintptr, lparam uintptr) uintptr {
 		if msg == WM_POWERBROADCAST {
 			if wparam == PBT_APMRESUMESUSPEND || wparam == PBT_APMRESUMEAUTOMATIC {
 				slog.Info("Windows wake event detected")
 				TriggerWake()
 			}
 		}
-		return windows.DefWindowProc(hwnd, msg, wparam, lparam)
+		ret, _, _ := defWindowProc.Call(uintptr(hwnd), uintptr(msg), wparam, lparam)
+		return ret
 	})
 
-	instance, _ := windows.GetModuleHandle(nil)
+	instance, _, _ := getModuleHandle.Call(0)
 
-	wc := windows.WNDCLASSEX{
-		CbSize:        uint32(unsafe.Sizeof(windows.WNDCLASSEX{})),
-		LpfnWndProc:   wndProc,
-		HInstance:     instance,
-		LpszClassName: className,
+	wc := wndClassExW{
+		lpfnWndProc:   wndProc,
+		hInstance:     syscall.Handle(instance),
+		lpszClassName: className,
 	}
+	wc.cbSize = uint32(unsafe.Sizeof(wc))
 
-	if _, err := windows.RegisterClassEx(&wc); err != nil {
+	res, _, err := registerClassEx.Call(uintptr(unsafe.Pointer(&wc)))
+	if res == 0 {
 		slog.Error("Failed to register window class", "error", err)
 		return
 	}
 
-	hwnd, err := windows.CreateWindowEx(
+	hwnd, _, err := createWindowEx.Call(
 		0,
-		className,
-		windowName,
+		uintptr(unsafe.Pointer(className)),
+		uintptr(unsafe.Pointer(windowName)),
 		0,
 		0, 0, 0, 0,
-		windows.HWND_MESSAGE,
+		uintptr(HWND_MESSAGE),
 		0,
 		instance,
-		nil,
+		0,
 	)
-	if err != nil {
+	if hwnd == 0 {
 		slog.Error("Failed to create message-only window", "error", err)
 		return
 	}
 
-	var msg windows.Msg
+	var m msg
 	for {
-		res, err := windows.GetMessage(&msg, hwnd, 0, 0)
-		if res == 0 || res == -1 {
-			if err != nil {
+		res, _, err := getMessage.Call(uintptr(unsafe.Pointer(&m)), uintptr(hwnd), 0, 0)
+		if int32(res) <= 0 {
+			if int32(res) == -1 {
 				slog.Error("GetMessage error", "error", err)
 			}
 			break
 		}
-		windows.TranslateMessage(&msg)
-		windows.DispatchMessage(&msg)
+		translateMessage.Call(uintptr(unsafe.Pointer(&m)))
+		dispatchMessage.Call(uintptr(unsafe.Pointer(&m)))
 	}
 }
 
