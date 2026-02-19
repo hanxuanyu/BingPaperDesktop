@@ -137,6 +137,7 @@ export function SettingsDialog({
                             <SelectItem value="off">禁用</SelectItem>
                             <SelectItem value="daily">每日固定时间</SelectItem>
                             <SelectItem value="interval">固定间隔</SelectItem>
+                            <SelectItem value="wakeup">休眠唤醒时触发</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -154,28 +155,29 @@ export function SettingsDialog({
                       )}
 
                       {localConfig.schedule_mode === 'interval' && (
-                        <>
-                          <div className="flex items-center justify-between border-t pt-4">
-                            <Label>间隔 (分钟, ≥15)</Label>
-                            <Input 
-                              type="number" 
-                              min={15}
-                              className="w-[180px]"
-                              value={localConfig.interval_minutes} 
-                              onChange={(e) => setLocalConfig({ ...localConfig, interval_minutes: parseInt(e.target.value) })}
-                            />
+                        <div className="flex items-center justify-between border-t pt-4">
+                          <Label>间隔 (分钟, ≥15)</Label>
+                          <Input 
+                            type="number" 
+                            min={15}
+                            className="w-[180px]"
+                            value={localConfig.interval_minutes} 
+                            onChange={(e) => setLocalConfig({ ...localConfig, interval_minutes: parseInt(e.target.value) })}
+                          />
+                        </div>
+                      )}
+
+                      {localConfig.schedule_mode !== 'off' && (
+                        <div className="flex items-center justify-between bg-background/50 p-3 rounded-md border border-dashed mt-2">
+                          <div className="space-y-0.5">
+                            <Label className="text-sm">随机更换历史壁纸</Label>
+                            <p className="text-[0.7rem] text-muted-foreground">每次触发时从历史记录中随机选择</p>
                           </div>
-                          <div className="flex items-center justify-between bg-background/50 p-3 rounded-md border border-dashed">
-                            <div className="space-y-0.5">
-                              <Label className="text-sm">随机更换历史壁纸</Label>
-                              <p className="text-[0.7rem] text-muted-foreground">每次触发时从历史记录中随机选择</p>
-                            </div>
-                            <Switch 
-                              checked={localConfig.random_history || false}
-                              onCheckedChange={(val) => setLocalConfig({ ...localConfig, random_history: val })}
-                            />
-                          </div>
-                        </>
+                          <Switch 
+                            checked={localConfig.random_history || false}
+                            onCheckedChange={(val) => setLocalConfig({ ...localConfig, random_history: val })}
+                          />
+                        </div>
                       )}
                     </div>
                   </section>

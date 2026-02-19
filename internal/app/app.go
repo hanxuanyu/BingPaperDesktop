@@ -224,12 +224,13 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 
 	// 7. 根据配置自动应用壁纸
 	if cfg.AutoApply {
-		slog.Info("Auto applying wallpaper", "random", cfg.RandomHistory)
 		if cfg.RandomHistory {
-			a.ApplyRandomHistory(cfg.OverlayMetadata)
-		} else {
-			a.ApplyWallpaper(cfg.OverlayMetadata)
+			slog.Info("Random history enabled, picking a random wallpaper from history")
+			return *a.lastFetch, a.ApplyRandomHistory(cfg.OverlayMetadata)
 		}
+
+		slog.Info("Auto applying wallpaper")
+		a.ApplyWallpaper(cfg.OverlayMetadata)
 	} else {
 		// 通知前端图片已更新，但未自动应用
 		runtime.EventsEmit(a.ctx, "current-image-changed", item)

@@ -23,3 +23,6 @@ func IsAutoStartEnabled() (bool, error) {
 func SetAutoStart(enable bool) error {
 	return nil
 }
+
+func OnWake(callback func()) {}
+func TriggerWake()           {}

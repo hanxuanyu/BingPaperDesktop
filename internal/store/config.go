@@ -18,7 +18,7 @@ type Config struct {
 	AutoApply       bool   `json:"auto_apply"`
 	OverlayMetadata bool   `json:"overlay_metadata"`
 	ForceUHD        bool   `json:"force_uhd"`
-	ScheduleMode    string `json:"schedule_mode"` // "off" | "daily" | "interval"
+	ScheduleMode    string `json:"schedule_mode"` // "off" | "daily" | "interval" | "wakeup"
 	DailyTime       string `json:"daily_time"`
 	IntervalMinutes int    `json:"interval_minutes"`
 	RetainDays      int    `json:"retain_days"`
