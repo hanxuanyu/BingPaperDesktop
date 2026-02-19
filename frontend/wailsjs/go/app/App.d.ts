@@ -44,6 +44,8 @@ export function Quit():Promise<void>;
 
 export function ResetApplication():Promise<void>;
 
+export function ResetSettings():Promise<void>;
+
 export function SaveConfig(arg1:store.Config):Promise<void>;
 
 export function SetupTray(arg1:Array<number>,arg2:Array<number>):Promise<any|any>;

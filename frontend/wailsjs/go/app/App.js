@@ -82,6 +82,10 @@ export function ResetApplication() {
   return window['go']['app']['App']['ResetApplication']();
 }
 
+export function ResetSettings() {
+  return window['go']['app']['App']['ResetSettings']();
+}
+
 export function SaveConfig(arg1) {
   return window['go']['app']['App']['SaveConfig'](arg1);
 }

@@ -402,6 +402,25 @@ func (a *App) GetWallpaperSupport() (bool, string) {
 	return wallpaper.Supported()
 }
 
+func (a *App) ResetSettings() error {
+	slog.Info("Reset: only settings")
+	a.sched.Stop()
+
+	// 1. 恢复并保存默认配置
+	cfg := store.DefaultConfig()
+	if err := store.SaveConfig(cfg); err != nil {
+		slog.Error("Reset: saving default config failed", "error", err)
+		return fmt.Errorf("failed to save default config: %w", err)
+	}
+
+	// 2. 同步调度器状态
+	a.sched.Update(cfg.ScheduleMode, cfg.DailyTime, cfg.IntervalMinutes)
+	a.sched.Start()
+
+	slog.Info("Reset settings completed")
+	return nil
+}
+
 func (a *App) ResetApplication() error {
 	slog.Info("!!! AUTOMATIC RESET TRIGGERED !!!")
 	a.sched.Stop()

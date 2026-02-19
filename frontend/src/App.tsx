@@ -17,7 +17,8 @@ import {
   CleanupByRetainDays,
   GetWallpaperSupport,
   SubmitWatermark,
-  ResetApplication
+  ResetApplication,
+  ResetSettings
 } from '../wailsjs/go/app/App';
 import { store } from '../wailsjs/go/models';
 import { renderWatermark } from './lib/watermark';
@@ -256,24 +257,31 @@ function App() {
     }
   };
 
-  const onResetConfirm = async () => {
-    console.log("Reset confirmed");
+  const onResetConfirm = async (onlySettings: boolean) => {
+    console.log("Reset confirmed, onlySettings:", onlySettings);
     setIsResetDialogOpen(false);
-    const tid = toast.loading('正在重置应用并清理数据...');
+    const tid = toast.loading(onlySettings ? '正在重置应用配置...' : '正在重置应用并清理数据...');
     try {
-      console.log("Calling ResetApplication...");
-      await ResetApplication();
-      console.log("ResetApplication success");
-      toast.success('应用数据已清空，配置已恢复默认', { id: tid });
+      if (onlySettings) {
+        console.log("Calling ResetSettings...");
+        await ResetSettings();
+      } else {
+        console.log("Calling ResetApplication...");
+        await ResetApplication();
+      }
+      console.log("Reset success");
+      toast.success(onlySettings ? '应用配置已恢复默认' : '应用数据已清空，配置已恢复默认', { id: tid });
       setIsSettingsOpen(false);
       // Refresh local state
       await loadConfig();
-      await loadHistory();
-      setCurrentImage(null);
-      setCurrentImageDataURL('');
-      fetchToday(true);
+      if (!onlySettings) {
+        await loadHistory();
+        setCurrentImage(null);
+        setCurrentImageDataURL('');
+        fetchToday(true);
+      }
     } catch (err) {
-      console.error("ResetApplication error:", err);
+      console.error("Reset error:", err);
       toast.error('重置失败: ' + err, { id: tid });
     }
   };
