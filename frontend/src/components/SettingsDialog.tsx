@@ -38,6 +38,7 @@ interface SettingsDialogProps {
   platform: string;
   onSaveConfig: (newCfg: store.Config, closeDialog: boolean) => Promise<void>;
   onCleanup: () => Promise<void>;
+  onCleanupLogs: () => Promise<void>;
   onReset: () => void;
 }
 
@@ -48,6 +49,7 @@ export function SettingsDialog({
   platform,
   onSaveConfig,
   onCleanup,
+  onCleanupLogs,
   onReset
 }: SettingsDialogProps) {
   const [localConfig, setLocalConfig] = useState<store.Config | null>(null);
@@ -292,6 +294,44 @@ export function SettingsDialog({
                             />
                           </div>
                         )}
+
+                        <div className="border-t pt-4 space-y-4">
+                          <h4 className="text-sm font-medium">日志管理</h4>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label className="text-xs">日志保留天数</Label>
+                              <div className="flex items-center gap-2">
+                                <Input 
+                                  type="number" 
+                                  className="h-8"
+                                  value={localConfig.log_retain_days}
+                                  onChange={(e) => setLocalConfig({ ...localConfig, log_retain_days: parseInt(e.target.value) || 0 })}
+                                />
+                                <span className="text-xs text-muted-foreground shrink-0">天</span>
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-xs">单文件最大尺寸</Label>
+                              <div className="flex items-center gap-2">
+                                <Input 
+                                  type="number" 
+                                  className="h-8"
+                                  value={localConfig.log_max_size}
+                                  onChange={(e) => setLocalConfig({ ...localConfig, log_max_size: parseInt(e.target.value) || 0 })}
+                                />
+                                <span className="text-xs text-muted-foreground shrink-0">MB</span>
+                              </div>
+                            </div>
+                          </div>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="w-full text-xs h-8"
+                            onClick={onCleanupLogs}
+                          >
+                            手动清理并压缩旧日志
+                          </Button>
+                        </div>
                         
                         <div className="pt-2">
                           <Button 

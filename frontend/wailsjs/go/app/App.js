@@ -22,6 +22,10 @@ export function CleanupByRetainDays(arg1) {
   return window['go']['app']['App']['CleanupByRetainDays'](arg1);
 }
 
+export function CleanupLogs() {
+  return window['go']['app']['App']['CleanupLogs']();
+}
+
 export function ClearHistory() {
   return window['go']['app']['App']['ClearHistory']();
 }

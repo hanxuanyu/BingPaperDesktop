@@ -164,8 +164,18 @@ func (a *App) SaveConfig(cfg store.Config) error {
 	err := store.SaveConfig(cfg)
 	if err == nil {
 		a.sched.Update(cfg.ScheduleMode, cfg.DailyTime, cfg.IntervalMinutes)
+		// 通知 main.go 更新日志配置
+		if logUpdateFunc != nil {
+			logUpdateFunc(cfg)
+		}
 	}
 	return err
+}
+
+var logUpdateFunc func(store.Config)
+
+func RegisterLogUpdate(fn func(store.Config)) {
+	logUpdateFunc = fn
 }
 
 func (a *App) IsAutoStartEnabled() (bool, error) {
@@ -419,6 +429,27 @@ func (a *App) ClearHistory() error {
 
 func (a *App) CleanupByRetainDays(days int) (int, error) {
 	return store.CleanupByRetainDays(days)
+}
+
+func (a *App) CleanupLogs() error {
+	slog.Info("Manually triggering log cleanup")
+	// Since main.go holds the logWriter, we might need a way to access it.
+	// However, lumberjack cleans up based on MaxBackups and MaxAge.
+	// To force a cleanup now, we can trigger a rotation.
+	// But wait, App doesn't have access to logWriter directly if it's in main.
+	// Let's define a callback or a package level variable in util or somewhere.
+	// Or, more simply, we can just call Rotate on the lumberjack instance.
+	// I'll add a way to register the logger or a cleanup function.
+	if logCleanupFunc != nil {
+		return logCleanupFunc()
+	}
+	return nil
+}
+
+var logCleanupFunc func() error
+
+func RegisterLogCleanup(fn func() error) {
+	logCleanupFunc = fn
 }
 
 func (a *App) OpenDataDir() error {

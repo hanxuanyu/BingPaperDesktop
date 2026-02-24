@@ -7,6 +7,7 @@ require (
 	github.com/wailsapp/wails/v2 v2.11.0
 	golang.org/x/image v0.12.0
 	golang.org/x/sys v0.30.0
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
 require (

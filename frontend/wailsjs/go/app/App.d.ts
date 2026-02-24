@@ -14,6 +14,8 @@ export function BrowserOpenURL(arg1:string):Promise<void>;
 
 export function CleanupByRetainDays(arg1:number):Promise<number>;
 
+export function CleanupLogs():Promise<void>;
+
 export function ClearHistory():Promise<void>;
 
 export function DeleteHistory(arg1:string):Promise<void>;

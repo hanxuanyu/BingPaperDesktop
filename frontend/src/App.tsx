@@ -15,6 +15,7 @@ import {
   ClearHistory, 
   GetImageDataURL,
   CleanupByRetainDays,
+  CleanupLogs,
   GetWallpaperSupport,
   SubmitWatermark,
   ResetApplication,
@@ -286,6 +287,15 @@ function App() {
     }
   };
 
+  const handleCleanupLogs = async () => {
+    try {
+      await CleanupLogs();
+      toast.success('日志清理已触发');
+    } catch (err) {
+      toast.error('日志清理失败: ' + err);
+    }
+  };
+
   return (
     <TooltipProvider>
       <div className="relative h-full w-full bg-slate-950 overflow-hidden font-sans">
@@ -328,6 +338,7 @@ function App() {
             platform={platform}
             onSaveConfig={handleSaveConfig}
             onCleanup={handleCleanup}
+            onCleanupLogs={handleCleanupLogs}
             onReset={() => setIsResetDialogOpen(true)}
           />
         </div>

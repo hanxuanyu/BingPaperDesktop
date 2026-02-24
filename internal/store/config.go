@@ -22,6 +22,8 @@ type Config struct {
 	IntervalMinutes int    `json:"interval_minutes"`
 	RetainDays      int    `json:"retain_days"`
 	RandomHistory   bool   `json:"random_history"`
+	LogRetainDays   int    `json:"log_retain_days"`
+	LogMaxSize      int    `json:"log_max_size"` // MB
 	AutoStart       bool   `json:"auto_start"`
 	HideDockIcon    bool   `json:"hide_dock_icon"`
 }
@@ -155,6 +157,8 @@ func DefaultConfig() Config {
 		IntervalMinutes: 60,
 		RetainDays:      0,
 		RandomHistory:   false,
+		LogRetainDays:   30,
+		LogMaxSize:      10,
 		AutoStart:       false,
 		HideDockIcon:    false,
 	}

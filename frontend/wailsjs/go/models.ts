@@ -68,6 +68,8 @@ export namespace store {
 	    interval_minutes: number;
 	    retain_days: number;
 	    random_history: boolean;
+	    log_retain_days: number;
+	    log_max_size: number;
 	    auto_start: boolean;
 	    hide_dock_icon: boolean;
 	
@@ -89,6 +91,8 @@ export namespace store {
 	        this.interval_minutes = source["interval_minutes"];
 	        this.retain_days = source["retain_days"];
 	        this.random_history = source["random_history"];
+	        this.log_retain_days = source["log_retain_days"];
+	        this.log_max_size = source["log_max_size"];
 	        this.auto_start = source["auto_start"];
 	        this.hide_dock_icon = source["hide_dock_icon"];
 	    }
