@@ -1,22 +1,31 @@
 import { useState, useEffect } from 'react';
-import { Image as ImageIcon, CheckCircle2, Trash2 } from 'lucide-react';
+import { Image as ImageIcon, CheckCircle2, Trash2, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { store } from '../../wailsjs/go/models';
-import { GetImageDataURL } from '../../wailsjs/go/app/App';
+import { GetThumbnailURL } from '../../wailsjs/go/app/App';
 
 interface HistoryItemCardProps {
   item: store.HistoryItem;
-  onApply: () => void;
+  monitors: any[];
+  onApply: (monitorId?: number) => void;
   onDelete: () => void;
 }
 
-export function HistoryItemCard({ item, onApply, onDelete }: HistoryItemCardProps) {
+export function HistoryItemCard({ item, monitors, onApply, onDelete }: HistoryItemCardProps) {
   const [thumb, setThumb] = useState<string>('');
   const [isLoaded, setIsLoaded] = useState(false);
+  const hasMultipleMonitors = monitors && monitors.length > 1;
 
   useEffect(() => {
-    GetImageDataURL(item.image_path).then(setThumb).catch(console.error);
+    GetThumbnailURL(item.image_path).then(setThumb).catch(console.error);
   }, [item.image_path]);
 
   return (
@@ -62,14 +71,48 @@ export function HistoryItemCard({ item, onApply, onDelete }: HistoryItemCardProp
              </span>
           </div>
           <div className="flex gap-2">
-            <Button 
-              size="sm" 
-              className="h-9 flex-1 bg-white text-black hover:bg-white/90 text-xs font-medium rounded-lg shadow-lg" 
-              onClick={onApply}
-            >
-              <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
-              应用壁纸
-            </Button>
+            {hasMultipleMonitors ? (
+              <div className="flex flex-1 gap-0">
+                <Button 
+                  size="sm" 
+                  className="h-9 flex-1 bg-white text-black hover:bg-white/90 text-xs font-medium rounded-l-lg rounded-r-none shadow-lg border-r border-black/10" 
+                  onClick={() => onApply()}
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+                  全部
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button 
+                      size="sm" 
+                      className="h-9 px-2 bg-white text-black hover:bg-white/90 rounded-r-lg rounded-l-none shadow-lg"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-40">
+                    <DropdownMenuItem onClick={() => onApply()}>
+                      所有显示器
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    {monitors.map((m) => (
+                      <DropdownMenuItem key={m.ID} onClick={() => onApply(m.ID)}>
+                        显示器 {m.ID + 1}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            ) : (
+              <Button 
+                size="sm" 
+                className="h-9 flex-1 bg-white text-black hover:bg-white/90 text-xs font-medium rounded-lg shadow-lg" 
+                onClick={() => onApply()}
+              >
+                <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+                应用壁纸
+              </Button>
+            )}
             <Button 
               size="sm" 
               variant="destructive" 

@@ -6,7 +6,13 @@ import (
 	"path/filepath"
 )
 
-func Set(path string) error {
+func getMonitors() ([]Monitor, error) {
+	// For Linux, simplified implementation.
+	// You might want to use 'xrandr' or 'gnome-randr' for more detail.
+	return []Monitor{{ID: 0, Name: "Default Monitor", Width: 1920, Height: 1080}}, nil
+}
+
+func set(path string) error {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return err
@@ -22,4 +28,10 @@ func Set(path string) error {
 	}
 
 	return fmt.Errorf("no supported desktop environment found")
+}
+
+func setOnMonitor(monitorID int, path string) error {
+	// GNOME gsettings doesn't easily support different wallpapers per monitor via CLI
+	// It's usually one wallpaper for all.
+	return set(path)
 }

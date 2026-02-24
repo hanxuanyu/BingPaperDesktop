@@ -48,6 +48,22 @@ export function QuickToggles({ config, onConfigChange }: QuickTogglesProps) {
           <p>在壁纸图片上叠加标题、日期及版权信息</p>
         </TooltipContent>
       </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="flex items-center space-x-2 bg-black/40 backdrop-blur-md p-2 px-3 rounded-full border border-white/10 pointer-events-auto">
+            <Switch 
+              id="calendar" 
+              checked={config.enable_calendar || false}
+              onCheckedChange={(val) => onConfigChange({ ...config, enable_calendar: val })}
+            />
+            <Label htmlFor="calendar" className="text-xs font-light text-white cursor-pointer select-none">叠加日历</Label>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="right">
+          <p>在壁纸右上角叠加当月日历</p>
+        </TooltipContent>
+      </Tooltip>
     </div>
   );
 }

@@ -5,8 +5,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"log/slog"
 	"math/rand"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,14 +53,22 @@ type App struct {
 	fetchMu   sync.Mutex
 	lastFetch *CurrentResult
 	wmChan    chan string
+	wmMu      sync.Mutex
 }
 
-type WatermarkRequest struct {
-	ImagePath string `json:"image_path"`
-	Title     string `json:"title"`
-	Date      string `json:"date"`
-	Copyright string `json:"copyright"`
-	Variant   string `json:"variant"`
+type OverlayRequest struct {
+	ImagePath       string             `json:"image_path"`
+	Title           string             `json:"title"`
+	Date            string             `json:"date"`
+	Copyright       string             `json:"copyright"`
+	Variant         string             `json:"variant"`
+	EnableWatermark bool               `json:"enable_watermark"`
+	EnableCalendar  bool               `json:"enable_calendar"`
+	HolidayData     []store.HolidayDay `json:"holiday_data"`
+	OnlyOverlay     bool               `json:"only_overlay"`
+	Width           int                `json:"width"`
+	Height          int                `json:"height"`
+	TargetRatio     float64            `json:"target_ratio"` // 目标屏幕比例 (如 1.777, 1.333)
 }
 
 type CurrentResult struct {
@@ -70,8 +82,8 @@ func NewApp() *App {
 		wmChan: make(chan string),
 	}
 	a.sched = scheduler.New(func() error {
-		_, err := a.FetchToday(0, 0, 1.0)
-		return err
+		// 自动获取并应用始终针对所有显示器
+		return a.ApplyHistoryToMonitor("", -1, 1920, 1080)
 	})
 	return a
 }
@@ -84,12 +96,61 @@ func (a *App) Startup(ctx context.Context) {
 
 	slog.Info("App startup", "os", filepath.Base(os.Args[0]))
 
+	// 检查节假日数据
+	if cfg.EnableHoliday {
+		go func() {
+			year := time.Now().Year()
+			if err := store.CheckAndDownloadHoliday(year, false); err != nil {
+				slog.Error("Failed to check/download holiday data", "year", year, "error", err)
+			}
+		}()
+	}
+
 	// 启动时同步开机启动设置
 	if cfg.AutoStart {
 		if err := util.SetAutoStart(true); err != nil {
 			slog.Error("Failed to set auto start on startup", "error", err)
 		}
 	}
+}
+
+func (a *App) GetBaseDir() string {
+	return store.GetBaseDir()
+}
+
+func (a *App) SelectDirectory() (string, error) {
+	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Select Data Directory",
+	})
+}
+
+func (a *App) SetBaseDir(path string) error {
+	if path == "" {
+		return fmt.Errorf("path cannot be empty")
+	}
+
+	// 1. 设置新路径
+	store.SetBaseDir(path)
+
+	// 2. 重新初始化 store (创建目录等)
+	if err := store.ReInit(); err != nil {
+		return err
+	}
+
+	// 3. 重新加载配置
+	cfg, err := store.LoadConfig()
+	if err != nil {
+		return err
+	}
+
+	// 4. 重启调度器 (因为数据保存路径变了，可能需要重新获取或清理)
+	a.sched.Stop()
+	a.sched.Update(cfg.ScheduleMode, cfg.DailyTime, cfg.IntervalMinutes)
+	a.sched.Start()
+
+	slog.Info("BaseDir changed", "newPath", path)
+
+	return nil
 }
 
 func (a *App) GetContext() context.Context {
@@ -124,9 +185,31 @@ func (a *App) SaveConfig(cfg store.Config) error {
 
 	err := store.SaveConfig(cfg)
 	if err == nil {
+		// 检查节假日数据
+		if cfg.EnableHoliday {
+			go func() {
+				year := time.Now().Year()
+				// 只有当开关从关闭变为开启，或 API URL 发生变化时，强制触发下载
+				force := (!oldCfg.EnableHoliday && cfg.EnableHoliday) || (oldCfg.HolidayApiUrl != cfg.HolidayApiUrl)
+				if err := store.CheckAndDownloadHoliday(year, force); err != nil {
+					slog.Error("Failed to check/download holiday data", "year", year, "error", err, "force", force)
+				}
+			}()
+		}
+
 		a.sched.Update(cfg.ScheduleMode, cfg.DailyTime, cfg.IntervalMinutes)
+		// 通知 main.go 更新日志配置
+		if logUpdateFunc != nil {
+			logUpdateFunc(cfg)
+		}
 	}
 	return err
+}
+
+var logUpdateFunc func(store.Config)
+
+func RegisterLogUpdate(fn func(store.Config)) {
+	logUpdateFunc = fn
 }
 
 func (a *App) IsAutoStartEnabled() (bool, error) {
@@ -197,10 +280,11 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 		}
 	}
 
-	// 5. 处理水印（通过前端渲染）
-	relWatermarkPath := ""
+	// 5. 准备叠加层
 	if cfg.OverlayMetadata {
-		relWatermarkPath = a.ensureWatermark(meta, chosen, dayDir, relImagePath, ext)
+		// 同时生成 16:9 和 4:3 两个版本
+		a.ensureWatermarkOverlay(meta, chosen, dayDir, relImagePath, cfg, 16.0/9.0)
+		a.ensureWatermarkOverlay(meta, chosen, dayDir, relImagePath, cfg, 4.0/3.0)
 	}
 
 	// 6. 保存到历史记录
@@ -211,7 +295,6 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 		Copyright:     meta.Copyright,
 		ChosenVariant: chosen.Variant,
 		ImagePath:     relImagePath,
-		WatermarkPath: relWatermarkPath,
 		CreatedAt:     time.Now(),
 	}
 
@@ -224,12 +307,13 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 
 	// 7. 根据配置自动应用壁纸
 	if cfg.AutoApply {
-		slog.Info("Auto applying wallpaper", "random", cfg.RandomHistory)
 		if cfg.RandomHistory {
-			a.ApplyRandomHistory(cfg.OverlayMetadata)
-		} else {
-			a.ApplyWallpaper(cfg.OverlayMetadata)
+			slog.Info("Random history enabled, picking a random wallpaper from history")
+			return *a.lastFetch, a.ApplyRandomHistory(realW, realH)
 		}
+
+		slog.Info("Auto applying wallpaper")
+		a.ApplyHistoryToMonitor(item.Key, -1, realW, realH)
 	} else {
 		// 通知前端图片已更新，但未自动应用
 		runtime.EventsEmit(a.ctx, "current-image-changed", item)
@@ -261,53 +345,11 @@ func (a *App) saveMetaJson(meta *bing.Meta, absDayDir string) {
 	}
 }
 
-// ensureWatermark 确保水印图片存在，如果不存在则通过前端渲染生成
-func (a *App) ensureWatermark(meta *bing.Meta, chosen bing.Variant, dayDir, relImagePath, ext string) string {
-	relWatermarkPath := filepath.Join(dayDir, "watermarked"+ext)
-	absWatermarkPath := filepath.Join(store.GetBaseDir(), relWatermarkPath)
-
-	if _, err := os.Stat(absWatermarkPath); err == nil {
-		return relWatermarkPath // 已存在
-	}
-
-	slog.Info("Requesting frontend to render watermark", "image", relImagePath)
-	dataURL, err := a.GetImageDataURL(relImagePath)
-	if err != nil {
-		slog.Error("Failed to get image data url for watermark", "error", err)
-		return ""
-	}
-
-	runtime.EventsEmit(a.ctx, "render-watermark", WatermarkRequest{
-		ImagePath: dataURL,
-		Title:     meta.Title,
-		Date:      meta.Date,
-		Copyright: meta.Copyright,
-		Variant:   chosen.Variant,
-	})
-
-	// 等待前端回传结果（带超时）
-	select {
-	case base64Data := <-a.wmChan:
-		if err := overlay.SaveBase64Image(base64Data, absWatermarkPath); err != nil {
-			slog.Error("Failed to save watermarked image", "path", absWatermarkPath, "error", err)
-			return ""
-		}
-		slog.Info("Watermark saved successfully", "path", relWatermarkPath)
-		return relWatermarkPath
-	case <-time.After(10 * time.Second):
-		slog.Error("Watermark rendering timeout")
-		return ""
-	}
+func (a *App) ApplyWallpaper(screenW, screenH int) error {
+	return a.ApplyHistoryToMonitor("", -1, screenW, screenH)
 }
 
-func (a *App) ApplyWallpaper(preferWatermarked bool) error {
-	if a.lastFetch == nil || !a.lastFetch.Success {
-		return fmt.Errorf("no current image to apply")
-	}
-	return a.ApplyHistory(a.lastFetch.Item.Key, preferWatermarked)
-}
-
-func (a *App) ApplyRandomHistory(preferWatermarked bool) error {
+func (a *App) ApplyRandomHistory(screenW, screenH int) error {
 	idx, err := store.LoadIndex()
 	if err != nil {
 		return err
@@ -321,7 +363,7 @@ func (a *App) ApplyRandomHistory(preferWatermarked bool) error {
 	target := idx.Items[r.Intn(len(idx.Items))]
 
 	slog.Info("Randomly selected from history", "key", target.Key, "title", target.Title)
-	return a.ApplyHistory(target.Key, preferWatermarked)
+	return a.ApplyHistoryToMonitor(target.Key, -1, screenW, screenH)
 }
 
 func (a *App) ListHistory() ([]store.HistoryItem, error) {
@@ -332,16 +374,155 @@ func (a *App) ListHistory() ([]store.HistoryItem, error) {
 	return idx.Items, nil
 }
 
-func (a *App) ApplyHistory(key string, preferWatermarked bool) error {
+// ensureWatermarkOverlay 确保特定比例的水印叠加层存在 (PNG 格式)
+func (a *App) ensureWatermarkOverlay(meta *bing.Meta, chosen bing.Variant, dayDir, relImagePath string, cfg store.Config, targetRatio float64) string {
+	a.wmMu.Lock()
+	defer a.wmMu.Unlock()
+
+	// 归一化比例为 16:9 或 4:3
+	normRatio := 1.777777
+	ratioSuffix := "_16_9"
+	if targetRatio < 1.5 {
+		normRatio = 1.333333
+		ratioSuffix = "_4_3"
+	}
+
+	relPath := filepath.Join(dayDir, "watermark"+ratioSuffix+".png")
+	absPath := filepath.Join(store.GetBaseDir(), relPath)
+
+	if _, err := os.Stat(absPath); err == nil {
+		return relPath
+	}
+
+	slog.Info("Requesting frontend to render watermark overlay", "image", relImagePath, "ratio", normRatio)
+	url, err := a.GetImageURL(relImagePath)
+	if err != nil {
+		slog.Error("Failed to get image url", "error", err)
+		return ""
+	}
+
+	runtime.EventsEmit(a.ctx, "render-watermark", OverlayRequest{
+		ImagePath:       url,
+		Title:           meta.Title,
+		Date:            meta.Date,
+		Copyright:       meta.Copyright,
+		Variant:         chosen.Variant,
+		EnableWatermark: true,
+		EnableCalendar:  false,
+		OnlyOverlay:     true,
+		TargetRatio:     normRatio,
+	})
+
+	select {
+	case base64Data := <-a.wmChan:
+		if base64Data == "" {
+			return ""
+		}
+		if err := overlay.SaveBase64Image(base64Data, absPath); err != nil {
+			slog.Error("Failed to save watermark overlay", "path", absPath, "error", err)
+			return ""
+		}
+		return relPath
+	case <-time.After(10 * time.Second):
+		slog.Error("Watermark processing timeout")
+		return ""
+	}
+}
+
+// getCalendarOverlay 获取当日的特定比例日历叠加层，按日期和分辨率缓存
+func (a *App) getCalendarOverlay(width, height int, cfg store.Config, targetRatio float64) string {
+	a.wmMu.Lock()
+	defer a.wmMu.Unlock()
+
+	today := time.Now().Format("2006-01-02")
+	dayDir := filepath.Join("data", today)
+	absDayDir := filepath.Join(store.GetBaseDir(), dayDir)
+	_ = os.MkdirAll(absDayDir, 0755)
+
+	suffix := ""
+	if cfg.EnableHoliday {
+		suffix = "h"
+	}
+
+	// 归一化比例为 16:9 或 4:3
+	normRatio := 1.777777
+	ratioSuffix := "_16_9"
+	if targetRatio < 1.5 {
+		normRatio = 1.333333
+		ratioSuffix = "_4_3"
+	}
+
+	relPath := filepath.Join(dayDir, "calendar_cache_"+fmt.Sprintf("%dx%d", width, height)+suffix+ratioSuffix+".png")
+	absPath := filepath.Join(store.GetBaseDir(), relPath)
+
+	if _, err := os.Stat(absPath); err == nil {
+		return absPath
+	}
+
+	slog.Info("Requesting frontend to render calendar overlay", "date", today, "size", fmt.Sprintf("%dx%d", width, height), "ratio", normRatio)
+
+	var holidayData []store.HolidayDay
+	if cfg.EnableHoliday {
+		hData, err := store.LoadHoliday(time.Now().Year())
+		if err == nil {
+			holidayData = hData.Days
+		}
+	}
+
+	runtime.EventsEmit(a.ctx, "render-watermark", OverlayRequest{
+		Date:            today,
+		EnableWatermark: false,
+		EnableCalendar:  true,
+		HolidayData:     holidayData,
+		OnlyOverlay:     true,
+		Width:           width,
+		Height:          height,
+		TargetRatio:     normRatio,
+	})
+
+	select {
+	case base64Data := <-a.wmChan:
+		if base64Data == "" {
+			return ""
+		}
+		if err := overlay.SaveBase64Image(base64Data, absPath); err != nil {
+			slog.Error("Failed to save calendar overlay", "path", absPath, "error", err)
+			return ""
+		}
+		return absPath
+	case <-time.After(10 * time.Second):
+		slog.Error("Calendar processing timeout")
+		return ""
+	}
+}
+
+func (a *App) GetMonitors() ([]wallpaper.Monitor, error) {
+	return wallpaper.GetMonitors()
+}
+
+func (a *App) ApplyHistory(key string, screenW, screenH int) error {
+	return a.ApplyHistoryToMonitor(key, -1, screenW, screenH)
+}
+
+func (a *App) ApplyHistoryToMonitor(key string, monitorID int, screenW, screenH int) error {
+	if key == "" {
+		// 如果 key 为空，表示获取最新的
+		res, err := a.FetchToday(screenW, screenH, 1.0)
+		if err != nil {
+			return err
+		}
+		key = res.Item.Key
+	}
+
 	idx, err := store.LoadIndex()
 	if err != nil {
 		return err
 	}
 
 	var target *store.HistoryItem
-	for _, item := range idx.Items {
-		if item.Key == key {
-			target = &item
+	for i := range idx.Items {
+		if idx.Items[i].Key == key {
+			target = &idx.Items[i]
 			break
 		}
 	}
@@ -350,23 +531,133 @@ func (a *App) ApplyHistory(key string, preferWatermarked bool) error {
 		return fmt.Errorf("history item not found")
 	}
 
-	path := target.ImagePath
-	if preferWatermarked && target.WatermarkPath != "" {
-		path = target.WatermarkPath
+	cfg, _ := store.LoadConfig()
+
+	// 获取所有显示器
+	monitors, err := wallpaper.GetMonitors()
+	if err != nil || len(monitors) == 0 {
+		slog.Warn("Failed to get monitors, falling back to single monitor", "error", err)
+		monitors = []wallpaper.Monitor{{ID: 0, Width: screenW, Height: screenH}}
 	}
 
-	absPath := filepath.Join(store.GetBaseDir(), path)
+	// 过滤显示器
+	var targets []wallpaper.Monitor
+	if monitorID >= 0 {
+		for _, m := range monitors {
+			if m.ID == monitorID {
+				targets = append(targets, m)
+				break
+			}
+		}
+		if len(targets) == 0 {
+			return fmt.Errorf("monitor with ID %d not found", monitorID)
+		}
+	} else {
+		targets = monitors
+	}
+
+	// 为每个目标显示器独立合成并应用壁纸
+	for _, m := range targets {
+		applyPath, err := a.prepareWallpaperForMonitor(target, m, cfg)
+		if err != nil {
+			slog.Error("Failed to prepare wallpaper for monitor", "id", m.ID, "error", err)
+			continue
+		}
+
+		slog.Info("Applying wallpaper to monitor", "id", m.ID, "name", m.Name, "path", applyPath)
+		if err := wallpaper.SetOnMonitor(m.ID, applyPath); err != nil {
+			if strings.Contains(err.Error(), "IDesktopWallpaper not supported") {
+				slog.Warn("Multi-monitor wallpaper not supported by system, falling back to global setting")
+				_ = wallpaper.Set(applyPath)
+				// If not supported, we can break or just continue to let fallback happen for others
+				// but since it's a system-wide thing, we probably only need to set it once.
+				return nil
+			}
+			slog.Error("Failed to set wallpaper on monitor", "id", m.ID, "error", err)
+			// 如果设置特定显示器失败，尝试全局设置作为回退
+			_ = wallpaper.Set(applyPath)
+		}
+	}
 
 	// Update last fetch and notify frontend
 	a.lastFetch = &CurrentResult{Item: *target, Success: true}
 	runtime.EventsEmit(a.ctx, "current-image-changed", *target)
 
-	slog.Info("Applying wallpaper", "path", absPath)
-	if err := wallpaper.Set(absPath); err != nil {
-		return err
+	return nil
+}
+
+func (a *App) prepareWallpaperForMonitor(target *store.HistoryItem, m wallpaper.Monitor, cfg store.Config) (string, error) {
+	absOriginalPath := filepath.Join(store.GetBaseDir(), target.ImagePath)
+
+	// 计算当前屏幕比例
+	targetRatio := 1.777777 // 默认 16:9
+	if m.Width > 0 && m.Height > 0 {
+		targetRatio = float64(m.Width) / float64(m.Height)
 	}
 
-	return nil
+	// 根据当前配置决定是否显示叠加层
+	showOverlay := cfg.OverlayMetadata || cfg.EnableCalendar
+	if !showOverlay {
+		return absOriginalPath, nil
+	}
+
+	var overlays []string
+
+	// 1. 水印 (针对图片固定)
+	if cfg.OverlayMetadata {
+		dayDir := filepath.Dir(target.ImagePath)
+		tempMeta := &bing.Meta{
+			Date:      target.Date,
+			Title:     target.Title,
+			Copyright: target.Copyright,
+		}
+		tempChosen := bing.Variant{
+			Variant: target.ChosenVariant,
+		}
+		wmPath := a.ensureWatermarkOverlay(tempMeta, tempChosen, dayDir, target.ImagePath, cfg, targetRatio)
+		if wmPath != "" {
+			overlays = append(overlays, filepath.Join(store.GetBaseDir(), wmPath))
+		}
+	}
+
+	// 2. 日历 (针对当前日期)
+	if cfg.EnableCalendar {
+		// 获取原图尺寸
+		file, err := os.Open(absOriginalPath)
+		if err == nil {
+			imgCfg, _, err := image.DecodeConfig(file)
+			file.Close()
+			if err == nil {
+				calPath := a.getCalendarOverlay(imgCfg.Width, imgCfg.Height, cfg, targetRatio)
+				if calPath != "" {
+					overlays = append(overlays, calPath)
+				}
+			}
+		}
+	}
+
+	if len(overlays) > 0 {
+		// 合成针对该显示器的最终图片
+		// 在 macOS 上，如果文件路径完全相同，系统可能不会触发壁纸更新。
+		// 因此我们在文件名中加入时间戳（分钟级别即可，或者秒，为了确保每次应用都生效，秒更好）
+		suffix := time.Now().Unix()
+		tempWallpaperPath := filepath.Join(store.GetBaseDir(), fmt.Sprintf("current_wallpaper_%d_%d.jpg", m.ID, suffix))
+
+		// 清理该显示器之前的旧临时壁纸文件
+		if matches, err := filepath.Glob(filepath.Join(store.GetBaseDir(), fmt.Sprintf("current_wallpaper_%d_*.jpg", m.ID))); err == nil {
+			for _, oldPath := range matches {
+				_ = os.Remove(oldPath)
+			}
+		}
+
+		if err := overlay.Composite(absOriginalPath, overlays, tempWallpaperPath); err == nil {
+			return tempWallpaperPath, nil
+		} else {
+			return "", fmt.Errorf("failed to composite image: %w", err)
+		}
+	}
+
+	return absOriginalPath, nil
 }
 
 func (a *App) DeleteHistory(key string) error {
@@ -379,6 +670,27 @@ func (a *App) ClearHistory() error {
 
 func (a *App) CleanupByRetainDays(days int) (int, error) {
 	return store.CleanupByRetainDays(days)
+}
+
+func (a *App) CleanupLogs() error {
+	slog.Info("Manually triggering log cleanup")
+	// Since main.go holds the logWriter, we might need a way to access it.
+	// However, lumberjack cleans up based on MaxBackups and MaxAge.
+	// To force a cleanup now, we can trigger a rotation.
+	// But wait, App doesn't have access to logWriter directly if it's in main.
+	// Let's define a callback or a package level variable in util or somewhere.
+	// Or, more simply, we can just call Rotate on the lumberjack instance.
+	// I'll add a way to register the logger or a cleanup function.
+	if logCleanupFunc != nil {
+		return logCleanupFunc()
+	}
+	return nil
+}
+
+var logCleanupFunc func() error
+
+func RegisterLogCleanup(fn func() error) {
+	logCleanupFunc = fn
 }
 
 func (a *App) OpenDataDir() error {
@@ -399,6 +711,25 @@ func (a *App) BrowserOpenURL(url string) error {
 
 func (a *App) GetWallpaperSupport() (bool, string) {
 	return wallpaper.Supported()
+}
+
+func (a *App) ResetSettings() error {
+	slog.Info("Reset: only settings")
+	a.sched.Stop()
+
+	// 1. 恢复并保存默认配置
+	cfg := store.DefaultConfig()
+	if err := store.SaveConfig(cfg); err != nil {
+		slog.Error("Reset: saving default config failed", "error", err)
+		return fmt.Errorf("failed to save default config: %w", err)
+	}
+
+	// 2. 同步调度器状态
+	a.sched.Update(cfg.ScheduleMode, cfg.DailyTime, cfg.IntervalMinutes)
+	a.sched.Start()
+
+	slog.Info("Reset settings completed")
+	return nil
 }
 
 func (a *App) ResetApplication() error {
@@ -468,6 +799,79 @@ func (a *App) GetImageDataURL(relPath string) (string, error) {
 	return fmt.Sprintf("data:%s;base64,%s", mime, encoded), nil
 }
 
+func (a *App) GetThumbnailURL(relPath string) (string, error) {
+	if relPath == "" {
+		return "", nil
+	}
+
+	// For thumbnails, we store them in a separate directory structure mirroring the data directory
+	thumbRelPath := filepath.Join("thumbnails", relPath)
+	thumbAbsPath := filepath.Join(store.GetBaseDir(), thumbRelPath)
+
+	if _, err := os.Stat(thumbAbsPath); os.IsNotExist(err) {
+		srcAbsPath := filepath.Join(store.GetBaseDir(), relPath)
+		if _, err := os.Stat(srcAbsPath); err != nil {
+			return "", err
+		}
+
+		if err := os.MkdirAll(filepath.Dir(thumbAbsPath), 0755); err != nil {
+			return "", err
+		}
+
+		slog.Info("Generating thumbnail", "src", relPath)
+		if err := util.GenerateThumbnail(srcAbsPath, thumbAbsPath, 400); err != nil {
+			slog.Error("Failed to generate thumbnail", "error", err)
+			return "/images/" + relPath, nil // Fallback to full image
+		}
+	}
+
+	// Replace backslashes with forward slashes for URL consistency
+	urlPath := filepath.ToSlash(thumbRelPath)
+	return "/images/" + urlPath, nil
+}
+
+func (a *App) GetImageURL(relPath string) (string, error) {
+	if relPath == "" {
+		return "", nil
+	}
+	urlPath := filepath.ToSlash(relPath)
+	return "/images/" + urlPath, nil
+}
+
+func (a *App) AssetsHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		if strings.HasPrefix(path, "/images/") {
+			relPath := strings.TrimPrefix(path, "/images/")
+			// Convert URL slashes back to system separators
+			relPath = filepath.FromSlash(relPath)
+			absPath := filepath.Join(store.GetBaseDir(), relPath)
+
+			// Basic security check: ensure the path is within baseDir
+			if !strings.HasPrefix(absPath, store.GetBaseDir()) {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+
+			if _, err := os.Stat(absPath); os.IsNotExist(err) {
+				http.NotFound(w, r)
+				return
+			}
+
+			// Add caching headers for performance
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			http.ServeFile(w, r, absPath)
+			return
+		}
+		http.NotFound(w, r)
+	})
+}
+
 func (a *App) SubmitWatermark(base64Data string) {
-	a.wmChan <- base64Data
+	// 避免在没有接收者时阻塞
+	select {
+	case a.wmChan <- base64Data:
+	default:
+		slog.Warn("SubmitWatermark: no receiver for channel")
+	}
 }

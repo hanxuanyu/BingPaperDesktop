@@ -131,6 +131,14 @@ func DeleteFromHistory(key string) error {
 		if err := os.RemoveAll(dir); err != nil {
 			slog.Warn("Failed to remove directory", "dir", dir, "error", err)
 		}
+
+		// 同时删除缩略图目录
+		thumbDir := filepath.Dir(filepath.Join(GetThumbnailsDir(), pathToDelete))
+		if _, err := os.Stat(thumbDir); err == nil {
+			slog.Info("Deleting thumbnail directory", "dir", thumbDir)
+			os.RemoveAll(thumbDir)
+		}
+
 		idx.Items = newItems
 		return SaveIndex(idx)
 	}
@@ -152,6 +160,12 @@ func ClearHistory() error {
 		// 只有当路径包含 data 目录时才执行删除，防止误删基础目录
 		if strings.Contains(dir, filepath.Join(GetBaseDir(), "data")) {
 			os.RemoveAll(dir)
+		}
+
+		// 清理缩略图
+		thumbDir := filepath.Dir(filepath.Join(GetThumbnailsDir(), item.ImagePath))
+		if strings.Contains(thumbDir, GetThumbnailsDir()) {
+			os.RemoveAll(thumbDir)
 		}
 	}
 
@@ -199,6 +213,12 @@ func CleanupByRetainDays(days int) (int, error) {
 					slog.Info("Cleaning up old wallpaper directory", "dir", dir, "itemDate", item.Date)
 					os.RemoveAll(dir)
 					deletedDirs[dir] = true
+
+					// 同时清理对应的缩略图
+					thumbDir := filepath.Dir(filepath.Join(GetThumbnailsDir(), item.ImagePath))
+					if strings.Contains(thumbDir, GetThumbnailsDir()) {
+						os.RemoveAll(thumbDir)
+					}
 				}
 			}
 			deletedCount++

@@ -8,10 +8,25 @@ package util
 #cgo LDFLAGS: -framework Cocoa
 #import <Cocoa/Cocoa.h>
 
-void SetActivationPolicy(int policy) {
+static inline void SetActivationPolicy(int policy) {
     NSApplicationActivationPolicy p = (NSApplicationActivationPolicy)policy;
     dispatch_async(dispatch_get_main_queue(), ^{
         [NSApp setActivationPolicy:p];
+    });
+}
+
+extern void triggerWake();
+
+static void StartWakeListener() {
+    static id observer = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        observer = [[[NSWorkspace sharedWorkspace] notificationCenter] addObserverForName:NSWorkspaceDidWakeNotification
+                                                                                  object:NULL
+                                                                                   queue:NULL
+                                                                              usingBlock:^(NSNotification *note) {
+            triggerWake();
+        }];
     });
 }
 */
@@ -23,6 +38,15 @@ import (
 	"path/filepath"
 	"strings"
 )
+
+//export triggerWake
+func triggerWake() {
+	TriggerWake()
+}
+
+func init() {
+	C.StartWakeListener()
+}
 
 func OpenFolder(path string) error {
 	return exec.Command("open", path).Start()

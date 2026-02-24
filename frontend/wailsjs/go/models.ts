@@ -68,8 +68,13 @@ export namespace store {
 	    interval_minutes: number;
 	    retain_days: number;
 	    random_history: boolean;
+	    log_retain_days: number;
+	    log_max_size: number;
 	    auto_start: boolean;
 	    hide_dock_icon: boolean;
+	    enable_calendar: boolean;
+	    enable_holiday: boolean;
+	    holiday_api_url: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Config(source);
@@ -89,8 +94,13 @@ export namespace store {
 	        this.interval_minutes = source["interval_minutes"];
 	        this.retain_days = source["retain_days"];
 	        this.random_history = source["random_history"];
+	        this.log_retain_days = source["log_retain_days"];
+	        this.log_max_size = source["log_max_size"];
 	        this.auto_start = source["auto_start"];
 	        this.hide_dock_icon = source["hide_dock_icon"];
+	        this.enable_calendar = source["enable_calendar"];
+	        this.enable_holiday = source["enable_holiday"];
+	        this.holiday_api_url = source["holiday_api_url"];
 	    }
 	}
 	export class HistoryItem {
@@ -137,6 +147,29 @@ export namespace store {
 		    }
 		    return a;
 		}
+	}
+
+}
+
+export namespace wallpaper {
+	
+	export class Monitor {
+	    ID: number;
+	    Name: string;
+	    Width: number;
+	    Height: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Monitor(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ID = source["ID"];
+	        this.Name = source["Name"];
+	        this.Width = source["Width"];
+	        this.Height = source["Height"];
+	    }
 	}
 
 }

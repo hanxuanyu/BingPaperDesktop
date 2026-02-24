@@ -11,13 +11,18 @@ import {
   FetchToday, 
   ListHistory, 
   ApplyHistory, 
+  ApplyHistoryToMonitor,
+  GetMonitors,
   DeleteHistory, 
   ClearHistory, 
-  GetImageDataURL,
+  GetImageURL,
+  GetThumbnailURL,
   CleanupByRetainDays,
+  CleanupLogs,
   GetWallpaperSupport,
   SubmitWatermark,
-  ResetApplication
+  ResetApplication,
+  ResetSettings
 } from '../wailsjs/go/app/App';
 import { store } from '../wailsjs/go/models';
 import { renderWatermark } from './lib/watermark';
@@ -35,6 +40,7 @@ function App() {
   const [prevImageDataURL, setPrevImageDataURL] = useState<string>('');
   const [isImgLoading, setIsImgLoading] = useState(false);
   const [history, setHistory] = useState<store.HistoryItem[]>([]);
+  const [monitors, setMonitors] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [wallpaperSupport, setWallpaperSupport] = useState<any>(true);
   const [platform, setPlatform] = useState<string>('');
@@ -65,6 +71,16 @@ function App() {
       setHistory(items); // Use the order from backend
     } catch (err) {
       console.error('Failed to load history:', err);
+    }
+  }, []);
+
+  // Load monitors
+  const loadMonitors = useCallback(async () => {
+    try {
+      const m = await GetMonitors();
+      setMonitors(m || []);
+    } catch (err) {
+      console.error('Failed to load monitors:', err);
     }
   }, []);
 
@@ -100,6 +116,7 @@ function App() {
   useEffect(() => {
     loadConfig();
     loadHistory();
+    loadMonitors();
     fetchToday(true);
     GetWallpaperSupport().then(setWallpaperSupport);
     Environment().then(env => setPlatform(env.platform));
@@ -130,13 +147,17 @@ function App() {
       toast.dismiss();
     });
 
-    // Watermark rendering listener
+    // Watermark/Overlay rendering listener
     const unregister = EventsOn('render-watermark', async (data: any) => {
       try {
         const base64Data = await renderWatermark(data);
+        if (!base64Data) {
+           throw new Error("Render returned empty data");
+        }
         await SubmitWatermark(base64Data);
       } catch (err) {
-        console.error('Watermark render error:', err);
+        console.error('Render error:', err);
+        toast.error('图片叠加渲染失败: ' + err);
         await SubmitWatermark(""); // Fallback
       }
     });
@@ -152,11 +173,10 @@ function App() {
   // Update background image when currentImage changes
   useEffect(() => {
     if (currentImage) {
-      const path = (config?.overlay_metadata && currentImage.watermark_path) 
-        ? currentImage.watermark_path 
-        : currentImage.image_path;
+      // 主界面始终显示原图
+      const path = currentImage.image_path;
       
-      GetImageDataURL(path).then(async (url) => {
+      GetImageURL(path).then(async (url) => {
         if (url === currentImageDataURL) return;
 
         // 预加载图片确保切换时不闪烁
@@ -177,15 +197,16 @@ function App() {
       setPrevImageDataURL(currentImageDataURL);
       setCurrentImageDataURL('');
     }
-  }, [currentImage, config?.overlay_metadata]);
+  }, [currentImage]);
 
-  const handleApplyWallpaper = async () => {
+  const handleApplyWallpaper = async (monitorId: number = -1) => {
     if (!currentImage) return;
     setLoading(true);
     try {
-      // Use ApplyHistory with the current key to ensure we apply the displayed image
-      await ApplyHistory(currentImage.key, config?.overlay_metadata || false);
-      toast.success('壁纸设置成功');
+      const w = Math.round(window.screen.width * window.devicePixelRatio);
+      const h = Math.round(window.screen.height * window.devicePixelRatio);
+      await ApplyHistoryToMonitor(currentImage.key, monitorId, w, h);
+      toast.success(monitorId === -1 ? '所有屏幕壁纸设置成功' : `屏幕 ${monitorId + 1} 壁纸设置成功`);
     } catch (err) {
       toast.error('设置壁纸失败: ' + err);
     } finally {
@@ -196,8 +217,23 @@ function App() {
   const handleSaveConfig = async (newCfg: store.Config, closeDialog = false) => {
     try {
       await SaveConfig(newCfg);
+      
+      const holidaySwitchedOn = !config?.enable_holiday && newCfg.enable_holiday;
+      const holidayUrlChanged = config?.enable_holiday && newCfg.enable_holiday && config?.holiday_api_url !== newCfg.holiday_api_url;
+      
       setConfig(newCfg);
       toast.success('配置已保存');
+
+      if (holidaySwitchedOn) {
+        toast.info('节假日显示已开启，正在后台下载数据...');
+      } else if (holidayUrlChanged) {
+        toast.info('节假日数据源已更新，正在重新下载数据...');
+      }
+
+      if (currentImage) {
+        // 配置更新后立即应用以触发重新渲染预览
+        handleApplyHistory(currentImage, -1);
+      }
       if (closeDialog) {
         setIsSettingsOpen(false);
       }
@@ -206,11 +242,13 @@ function App() {
     }
   };
 
-  const handleApplyHistory = async (item: store.HistoryItem) => {
+  const handleApplyHistory = async (item: store.HistoryItem, monitorId: number = -1) => {
     setLoading(true);
     try {
-      await ApplyHistory(item.key, config?.overlay_metadata || false);
-      toast.success('已切换并设为壁纸');
+      const w = Math.round(window.screen.width * window.devicePixelRatio);
+      const h = Math.round(window.screen.height * window.devicePixelRatio);
+      await ApplyHistoryToMonitor(item.key, monitorId, w, h);
+      toast.success(monitorId === -1 ? '已切换并设为壁纸' : `已切换并设为屏幕 ${monitorId + 1} 壁纸`);
     } catch (err) {
       toast.error('设置壁纸失败: ' + err);
     } finally {
@@ -256,25 +294,41 @@ function App() {
     }
   };
 
-  const onResetConfirm = async () => {
-    console.log("Reset confirmed");
+  const onResetConfirm = async (onlySettings: boolean) => {
+    console.log("Reset confirmed, onlySettings:", onlySettings);
     setIsResetDialogOpen(false);
-    const tid = toast.loading('正在重置应用并清理数据...');
+    const tid = toast.loading(onlySettings ? '正在重置应用配置...' : '正在重置应用并清理数据...');
     try {
-      console.log("Calling ResetApplication...");
-      await ResetApplication();
-      console.log("ResetApplication success");
-      toast.success('应用数据已清空，配置已恢复默认', { id: tid });
+      if (onlySettings) {
+        console.log("Calling ResetSettings...");
+        await ResetSettings();
+      } else {
+        console.log("Calling ResetApplication...");
+        await ResetApplication();
+      }
+      console.log("Reset success");
+      toast.success(onlySettings ? '应用配置已恢复默认' : '应用数据已清空，配置已恢复默认', { id: tid });
       setIsSettingsOpen(false);
       // Refresh local state
       await loadConfig();
-      await loadHistory();
-      setCurrentImage(null);
-      setCurrentImageDataURL('');
-      fetchToday(true);
+      if (!onlySettings) {
+        await loadHistory();
+        setCurrentImage(null);
+        setCurrentImageDataURL('');
+        fetchToday(true);
+      }
     } catch (err) {
-      console.error("ResetApplication error:", err);
+      console.error("Reset error:", err);
       toast.error('重置失败: ' + err, { id: tid });
+    }
+  };
+
+  const handleCleanupLogs = async () => {
+    try {
+      await CleanupLogs();
+      toast.success('日志清理已触发');
+    } catch (err) {
+      toast.error('日志清理失败: ' + err);
     }
   };
 
@@ -308,6 +362,7 @@ function App() {
         <div className="absolute top-6 right-6 flex gap-3 z-10">
           <HistoryDrawer 
             history={history}
+            monitors={monitors}
             onApplyHistory={handleApplyHistory}
             onDeleteHistory={handleDeleteHistory}
             onClearHistory={handleClearHistory}
@@ -320,6 +375,7 @@ function App() {
             platform={platform}
             onSaveConfig={handleSaveConfig}
             onCleanup={handleCleanup}
+            onCleanupLogs={handleCleanupLogs}
             onReset={() => setIsResetDialogOpen(true)}
           />
         </div>
@@ -328,6 +384,7 @@ function App() {
         <WallpaperInfo 
           currentImage={currentImage}
           loading={loading}
+          monitors={monitors}
           onRefresh={() => fetchToday()}
           onApply={handleApplyWallpaper}
         />

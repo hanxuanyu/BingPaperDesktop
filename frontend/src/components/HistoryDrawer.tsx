@@ -12,13 +12,15 @@ import { HistoryItemCard } from './HistoryItemCard';
 
 interface HistoryDrawerProps {
   history: store.HistoryItem[];
-  onApplyHistory: (item: store.HistoryItem) => void;
+  monitors: any[];
+  onApplyHistory: (item: store.HistoryItem, monitorId?: number) => void;
   onDeleteHistory: (key: string) => void;
   onClearHistory: () => void;
 }
 
 export function HistoryDrawer({ 
   history, 
+  monitors,
   onApplyHistory, 
   onDeleteHistory, 
   onClearHistory 
@@ -49,7 +51,8 @@ export function HistoryDrawer({
                 <HistoryItemCard 
                   key={item.key} 
                   item={item} 
-                  onApply={() => onApplyHistory(item)}
+                  monitors={monitors}
+                  onApply={(monitorId) => onApplyHistory(item, monitorId)}
                   onDelete={() => onDeleteHistory(item.key)}
                 />
               ))}

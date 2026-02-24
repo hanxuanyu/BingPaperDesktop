@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"BingPaperDesktop/internal/util"
 )
 
 type TaskFunc func() error
@@ -20,11 +22,21 @@ type Scheduler struct {
 }
 
 func New(task TaskFunc) *Scheduler {
-	return &Scheduler{
+	s := &Scheduler{
 		task:     task,
 		mode:     "off",
 		stopChan: make(chan struct{}),
 	}
+	util.OnWake(func() {
+		s.mu.Lock()
+		mode := s.mode
+		s.mu.Unlock()
+		if mode == "wakeup" {
+			slog.Info("Scheduler: wake event received, executing task")
+			s.execute()
+		}
+	})
+	return s
 }
 
 func (s *Scheduler) Update(mode, dailyTime string, intervalMinutes int) {

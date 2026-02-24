@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"flag"
 	"io"
 	"log"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	"BingPaperDesktop/internal/app"
 	"BingPaperDesktop/internal/store"
 	"BingPaperDesktop/internal/util"
+	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/energye/systray"
 	"github.com/wailsapp/wails/v2"
@@ -30,20 +32,45 @@ var appIcon []byte
 //go:embed build/windows/icon.ico
 var appIconIco []byte
 
+var logWriter *lumberjack.Logger
+
 func initLogger() {
+	cfg, _ := store.LoadConfig()
 	logPath := filepath.Join(store.GetLogsDir(), "app.log")
-	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Fatalf("Failed to open log file: %v", err)
+
+	logWriter = &lumberjack.Logger{
+		Filename:   logPath,
+		MaxSize:    cfg.LogMaxSize,    // megabytes
+		MaxBackups: 3,                 // keep 3 old files
+		MaxAge:     cfg.LogRetainDays, // days
+		Compress:   false,             // disabled by default
 	}
 
 	// MultiWriter to both file and stdout
-	mw := io.MultiWriter(f, os.Stdout)
+	mw := io.MultiWriter(logWriter, os.Stdout)
 	logger := slog.New(slog.NewTextHandler(mw, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 }
 
+func updateLogger(cfg store.Config) {
+	if logWriter == nil {
+		return
+	}
+	logWriter.MaxSize = cfg.LogMaxSize
+	logWriter.MaxAge = cfg.LogRetainDays
+	// Trigger rotation check if needed (lumberjack does this on write,
+	// but we could call logWriter.Rotate() if we want immediate cleanup)
+}
+
 func main() {
+	// Parse command line flags
+	dataPath := flag.String("data-path", "", "Custom path for configuration and data files")
+	flag.Parse()
+
+	if *dataPath != "" {
+		store.SetBaseDir(*dataPath)
+	}
+
 	// Initialize store and portable paths
 	if err := store.Init(); err != nil {
 		log.Fatalf("Failed to initialize store: %v", err)
@@ -56,6 +83,17 @@ func main() {
 
 	// Create an instance of the app structure
 	appInstance := app.NewApp()
+
+	// Register log cleanup function
+	app.RegisterLogCleanup(func() error {
+		if logWriter != nil {
+			return logWriter.Rotate()
+		}
+		return nil
+	})
+
+	// Register log update function
+	app.RegisterLogUpdate(updateLogger)
 
 	// Setup Tray
 	trayStart, trayEnd := appInstance.SetupTray(appIcon, appIconIco)
@@ -70,7 +108,8 @@ func main() {
 		Height:      768,
 		StartHidden: true,
 		AssetServer: &assetserver.Options{
-			Assets: assets,
+			Assets:  assets,
+			Handler: appInstance.AssetsHandler(),
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		OnStartup: func(ctx context.Context) {

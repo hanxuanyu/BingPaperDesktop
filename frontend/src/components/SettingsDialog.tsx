@@ -20,7 +20,16 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { store, app } from '../../wailsjs/go/models';
-import { OpenDataDir, OpenLogsDir, Quit, GetVersionInfo, BrowserOpenURL } from '../../wailsjs/go/app/App';
+import { 
+  OpenDataDir, 
+  OpenLogsDir, 
+  Quit, 
+  GetVersionInfo, 
+  BrowserOpenURL,
+  GetBaseDir,
+  SelectDirectory,
+  SetBaseDir 
+} from '../../wailsjs/go/app/App';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -29,6 +38,7 @@ interface SettingsDialogProps {
   platform: string;
   onSaveConfig: (newCfg: store.Config, closeDialog: boolean) => Promise<void>;
   onCleanup: () => Promise<void>;
+  onCleanupLogs: () => Promise<void>;
   onReset: () => void;
 }
 
@@ -39,17 +49,33 @@ export function SettingsDialog({
   platform,
   onSaveConfig,
   onCleanup,
+  onCleanupLogs,
   onReset
 }: SettingsDialogProps) {
   const [localConfig, setLocalConfig] = useState<store.Config | null>(null);
   const [versionInfo, setVersionInfo] = useState<app.VersionInfo | null>(null);
+  const [currentBaseDir, setCurrentBaseDir] = useState<string>('');
 
   useEffect(() => {
     if (open && initialConfig) {
       setLocalConfig({ ...initialConfig });
       GetVersionInfo().then(setVersionInfo);
+      GetBaseDir().then(setCurrentBaseDir);
     }
   }, [open, initialConfig]);
+
+  const handleSelectBaseDir = async () => {
+    try {
+      const selected = await SelectDirectory();
+      if (selected && selected !== currentBaseDir) {
+        await SetBaseDir(selected);
+        setCurrentBaseDir(selected);
+        onReset();
+      }
+    } catch (err) {
+      console.error('Failed to select directory:', err);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -137,6 +163,7 @@ export function SettingsDialog({
                             <SelectItem value="off">禁用</SelectItem>
                             <SelectItem value="daily">每日固定时间</SelectItem>
                             <SelectItem value="interval">固定间隔</SelectItem>
+                            <SelectItem value="wakeup">休眠唤醒时触发</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -154,28 +181,29 @@ export function SettingsDialog({
                       )}
 
                       {localConfig.schedule_mode === 'interval' && (
-                        <>
-                          <div className="flex items-center justify-between border-t pt-4">
-                            <Label>间隔 (分钟, ≥15)</Label>
-                            <Input 
-                              type="number" 
-                              min={15}
-                              className="w-[180px]"
-                              value={localConfig.interval_minutes} 
-                              onChange={(e) => setLocalConfig({ ...localConfig, interval_minutes: parseInt(e.target.value) })}
-                            />
+                        <div className="flex items-center justify-between border-t pt-4">
+                          <Label>间隔 (分钟, ≥15)</Label>
+                          <Input 
+                            type="number" 
+                            min={15}
+                            className="w-[180px]"
+                            value={localConfig.interval_minutes} 
+                            onChange={(e) => setLocalConfig({ ...localConfig, interval_minutes: parseInt(e.target.value) })}
+                          />
+                        </div>
+                      )}
+
+                      {localConfig.schedule_mode !== 'off' && (
+                        <div className="flex items-center justify-between bg-background/50 p-3 rounded-md border border-dashed mt-2">
+                          <div className="space-y-0.5">
+                            <Label className="text-sm">随机更换历史壁纸</Label>
+                            <p className="text-[0.7rem] text-muted-foreground">每次触发时从历史记录中随机选择</p>
                           </div>
-                          <div className="flex items-center justify-between bg-background/50 p-3 rounded-md border border-dashed">
-                            <div className="space-y-0.5">
-                              <Label className="text-sm">随机更换历史壁纸</Label>
-                              <p className="text-[0.7rem] text-muted-foreground">每次触发时从历史记录中随机选择</p>
-                            </div>
-                            <Switch 
-                              checked={localConfig.random_history || false}
-                              onCheckedChange={(val) => setLocalConfig({ ...localConfig, random_history: val })}
-                            />
-                          </div>
-                        </>
+                          <Switch 
+                            checked={localConfig.random_history || false}
+                            onCheckedChange={(val) => setLocalConfig({ ...localConfig, random_history: val })}
+                          />
+                        </div>
                       )}
                     </div>
                   </section>
@@ -207,6 +235,21 @@ export function SettingsDialog({
                         <Button variant="secondary" className="flex-1 h-9 text-xs" onClick={() => OpenDataDir()}>打开数据目录</Button>
                         <Button variant="secondary" className="flex-1 h-9 text-xs" onClick={() => OpenLogsDir()}>查看日志目录</Button>
                       </div>
+
+                      <div className="space-y-2 border-t pt-4">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm font-medium">基准保存路径 (baseDir)</Label>
+                          <Button variant="outline" size="sm" className="h-7 text-[0.7rem]" onClick={handleSelectBaseDir}>
+                            更改路径
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-2 bg-muted/30 p-2 rounded border text-[0.7rem] font-mono break-all">
+                          <span className="truncate flex-1">{currentBaseDir}</span>
+                        </div>
+                        <p className="text-[0.65rem] text-muted-foreground italic">
+                          更改此路径将切换配置文件和数据的保存位置，旧数据不会自动迁移。
+                        </p>
+                      </div>
                     </div>
                   </section>
 
@@ -230,6 +273,46 @@ export function SettingsDialog({
 
                         <div className="flex items-center justify-between">
                           <div className="space-y-0.5">
+                            <Label className="text-base">叠加日历</Label>
+                            <p className="text-xs text-muted-foreground">在壁纸右上角同步渲染当月日历</p>
+                          </div>
+                          <Switch 
+                            checked={localConfig.enable_calendar || false}
+                            onCheckedChange={(val) => setLocalConfig({ ...localConfig, enable_calendar: val })}
+                          />
+                        </div>
+
+                        {localConfig.enable_calendar && (
+                          <div className="space-y-4 border-t pt-4">
+                            <div className="flex items-center justify-between">
+                              <div className="space-y-0.5">
+                                <Label className="text-base">中国节假日信息</Label>
+                                <p className="text-xs text-muted-foreground">显示农历、节气，并标注法定节假日休/班</p>
+                              </div>
+                              <Switch 
+                                checked={localConfig.enable_holiday || false}
+                                onCheckedChange={(val) => setLocalConfig({ ...localConfig, enable_holiday: val })}
+                              />
+                            </div>
+                            {localConfig.enable_holiday && (
+                              <div className="space-y-2 pl-4 border-l-2 border-primary/20">
+                                <Label className="text-sm">节假日 API 数据源</Label>
+                                <Input 
+                                  className="font-mono text-[0.7rem] h-8"
+                                  placeholder="https://.../yyyy.json"
+                                  value={localConfig.holiday_api_url || ''} 
+                                  onChange={(e) => setLocalConfig({ ...localConfig, holiday_api_url: e.target.value })}
+                                />
+                                <p className="text-[0.65rem] text-muted-foreground italic">
+                                  使用 yyyy 作为年份占位符。默认从 GitHub 获取。
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between border-t pt-4">
+                          <div className="space-y-0.5">
                             <Label className="text-base">开机自启动</Label>
                             <p className="text-xs text-muted-foreground">在系统启动后自动运行应用</p>
                           </div>
@@ -251,6 +334,44 @@ export function SettingsDialog({
                             />
                           </div>
                         )}
+
+                        <div className="border-t pt-4 space-y-4">
+                          <h4 className="text-sm font-medium">日志管理</h4>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label className="text-xs">日志保留天数</Label>
+                              <div className="flex items-center gap-2">
+                                <Input 
+                                  type="number" 
+                                  className="h-8"
+                                  value={localConfig.log_retain_days}
+                                  onChange={(e) => setLocalConfig({ ...localConfig, log_retain_days: parseInt(e.target.value) || 0 })}
+                                />
+                                <span className="text-xs text-muted-foreground shrink-0">天</span>
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-xs">单文件最大尺寸</Label>
+                              <div className="flex items-center gap-2">
+                                <Input 
+                                  type="number" 
+                                  className="h-8"
+                                  value={localConfig.log_max_size}
+                                  onChange={(e) => setLocalConfig({ ...localConfig, log_max_size: parseInt(e.target.value) || 0 })}
+                                />
+                                <span className="text-xs text-muted-foreground shrink-0">MB</span>
+                              </div>
+                            </div>
+                          </div>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="w-full text-xs h-8"
+                            onClick={onCleanupLogs}
+                          >
+                            手动清理并压缩旧日志
+                          </Button>
+                        </div>
                         
                         <div className="pt-2">
                           <Button 
