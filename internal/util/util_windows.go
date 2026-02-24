@@ -15,15 +15,16 @@ import (
 )
 
 var (
-	user32           = syscall.NewLazyDLL("user32.dll")
-	kernel32         = syscall.NewLazyDLL("kernel32.dll")
-	registerClassEx  = user32.NewProc("RegisterClassExW")
-	createWindowEx   = user32.NewProc("CreateWindowExW")
-	defWindowProc    = user32.NewProc("DefWindowProcW")
-	getMessage       = user32.NewProc("GetMessageW")
-	translateMessage = user32.NewProc("TranslateMessage")
-	dispatchMessage  = user32.NewProc("DispatchMessageW")
-	getModuleHandle  = kernel32.NewProc("GetModuleHandleW")
+	user32                            = syscall.NewLazyDLL("user32.dll")
+	kernel32                          = syscall.NewLazyDLL("kernel32.dll")
+	registerClassEx                   = user32.NewProc("RegisterClassExW")
+	createWindowEx                    = user32.NewProc("CreateWindowExW")
+	defWindowProc                     = user32.NewProc("DefWindowProcW")
+	getMessage                        = user32.NewProc("GetMessageW")
+	translateMessage                  = user32.NewProc("TranslateMessage")
+	dispatchMessage                   = user32.NewProc("DispatchMessageW")
+	registerSuspendResumeNotification = user32.NewProc("RegisterSuspendResumeNotification")
+	getModuleHandle                   = kernel32.NewProc("GetModuleHandleW")
 )
 
 type wndClassExW struct {
@@ -60,10 +61,10 @@ func init() {
 
 func startWakeListener() {
 	const (
-		WM_POWERBROADCAST      = 0x0218
-		PBT_APMRESUMEAUTOMATIC = 0x0012
-		PBT_APMRESUMESUSPEND   = 0x0007
-		HWND_MESSAGE           = syscall.Handle(^uintptr(2)) // -3
+		WM_POWERBROADCAST           = 0x0218
+		PBT_APMRESUMEAUTOMATIC      = 0x0012
+		PBT_APMRESUMESUSPEND        = 0x0007
+		DEVICE_NOTIFY_WINDOW_HANDLE = 0x00000000
 	)
 
 	className, _ := syscall.UTF16PtrFromString("WakeListenerClass")
@@ -101,19 +102,28 @@ func startWakeListener() {
 		uintptr(unsafe.Pointer(windowName)),
 		0,
 		0, 0, 0, 0,
-		uintptr(HWND_MESSAGE),
+		0, // 改为顶级不可见窗口，广播消息肯定能接收到
 		0,
 		instance,
 		0,
 	)
 	if hwnd == 0 {
-		slog.Error("Failed to create message-only window", "error", err)
+		slog.Error("Failed to create message window", "error", err)
 		return
+	}
+
+	// 尝试注册电源通知（Windows 8+）
+	if registerSuspendResumeNotification.Find() == nil {
+		ret, _, err := registerSuspendResumeNotification.Call(uintptr(hwnd), DEVICE_NOTIFY_WINDOW_HANDLE)
+		if ret == 0 {
+			slog.Warn("Failed to register suspend/resume notification", "error", err)
+		}
 	}
 
 	var m msg
 	for {
-		res, _, err := getMessage.Call(uintptr(unsafe.Pointer(&m)), uintptr(hwnd), 0, 0)
+		// hwnd 参数为 0 表示获取线程的所有消息
+		res, _, err := getMessage.Call(uintptr(unsafe.Pointer(&m)), 0, 0, 0)
 		if int32(res) <= 0 {
 			if int32(res) == -1 {
 				slog.Error("GetMessage error", "error", err)
