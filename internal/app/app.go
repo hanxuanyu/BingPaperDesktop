@@ -82,8 +82,8 @@ func NewApp() *App {
 		wmChan: make(chan string),
 	}
 	a.sched = scheduler.New(func() error {
-		_, err := a.FetchToday(0, 0, 1.0)
-		return err
+		// 自动获取并应用始终针对所有显示器
+		return a.ApplyHistoryToMonitor("", -1, 1920, 1080)
 	})
 	return a
 }
@@ -313,7 +313,7 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 		}
 
 		slog.Info("Auto applying wallpaper")
-		a.ApplyWallpaper(realW, realH)
+		a.ApplyHistoryToMonitor(item.Key, -1, realW, realH)
 	} else {
 		// 通知前端图片已更新，但未自动应用
 		runtime.EventsEmit(a.ctx, "current-image-changed", item)
@@ -346,10 +346,7 @@ func (a *App) saveMetaJson(meta *bing.Meta, absDayDir string) {
 }
 
 func (a *App) ApplyWallpaper(screenW, screenH int) error {
-	if a.lastFetch == nil || !a.lastFetch.Success {
-		return fmt.Errorf("no current image to apply")
-	}
-	return a.ApplyHistory(a.lastFetch.Item.Key, screenW, screenH)
+	return a.ApplyHistoryToMonitor("", -1, screenW, screenH)
 }
 
 func (a *App) ApplyRandomHistory(screenW, screenH int) error {
@@ -366,7 +363,7 @@ func (a *App) ApplyRandomHistory(screenW, screenH int) error {
 	target := idx.Items[r.Intn(len(idx.Items))]
 
 	slog.Info("Randomly selected from history", "key", target.Key, "title", target.Title)
-	return a.ApplyHistory(target.Key, screenW, screenH)
+	return a.ApplyHistoryToMonitor(target.Key, -1, screenW, screenH)
 }
 
 func (a *App) ListHistory() ([]store.HistoryItem, error) {
@@ -499,7 +496,24 @@ func (a *App) getCalendarOverlay(width, height int, cfg store.Config, targetRati
 	}
 }
 
+func (a *App) GetMonitors() ([]wallpaper.Monitor, error) {
+	return wallpaper.GetMonitors()
+}
+
 func (a *App) ApplyHistory(key string, screenW, screenH int) error {
+	return a.ApplyHistoryToMonitor(key, -1, screenW, screenH)
+}
+
+func (a *App) ApplyHistoryToMonitor(key string, monitorID int, screenW, screenH int) error {
+	if key == "" {
+		// 如果 key 为空，表示获取最新的
+		res, err := a.FetchToday(screenW, screenH, 1.0)
+		if err != nil {
+			return err
+		}
+		key = res.Item.Key
+	}
+
 	idx, err := store.LoadIndex()
 	if err != nil {
 		return err
@@ -518,7 +532,6 @@ func (a *App) ApplyHistory(key string, screenW, screenH int) error {
 	}
 
 	cfg, _ := store.LoadConfig()
-	absOriginalPath := filepath.Join(store.GetBaseDir(), target.ImagePath)
 
 	// 获取所有显示器
 	monitors, err := wallpaper.GetMonitors()
@@ -527,67 +540,39 @@ func (a *App) ApplyHistory(key string, screenW, screenH int) error {
 		monitors = []wallpaper.Monitor{{ID: 0, Width: screenW, Height: screenH}}
 	}
 
-	// 为每个显示器独立合成并应用壁纸
-	for _, m := range monitors {
-		// 计算当前屏幕比例
-		targetRatio := 1.777777 // 默认 16:9
-		if m.Width > 0 && m.Height > 0 {
-			targetRatio = float64(m.Width) / float64(m.Height)
+	// 过滤显示器
+	var targets []wallpaper.Monitor
+	if monitorID >= 0 {
+		for _, m := range monitors {
+			if m.ID == monitorID {
+				targets = append(targets, m)
+				break
+			}
 		}
+		if len(targets) == 0 {
+			return fmt.Errorf("monitor with ID %d not found", monitorID)
+		}
+	} else {
+		targets = monitors
+	}
 
-		// 根据当前配置决定是否显示叠加层
-		showOverlay := cfg.OverlayMetadata || cfg.EnableCalendar
-		applyPath := absOriginalPath
-
-		if showOverlay {
-			var overlays []string
-
-			// 1. 水印 (针对图片固定)
-			if cfg.OverlayMetadata {
-				dayDir := filepath.Dir(target.ImagePath)
-				tempMeta := &bing.Meta{
-					Date:      target.Date,
-					Title:     target.Title,
-					Copyright: target.Copyright,
-				}
-				tempChosen := bing.Variant{
-					Variant: target.ChosenVariant,
-				}
-				wmPath := a.ensureWatermarkOverlay(tempMeta, tempChosen, dayDir, target.ImagePath, cfg, targetRatio)
-				if wmPath != "" {
-					overlays = append(overlays, filepath.Join(store.GetBaseDir(), wmPath))
-				}
-			}
-
-			// 2. 日历 (针对当前日期)
-			if cfg.EnableCalendar {
-				// 获取原图尺寸
-				file, err := os.Open(absOriginalPath)
-				if err == nil {
-					imgCfg, _, err := image.DecodeConfig(file)
-					file.Close()
-					if err == nil {
-						calPath := a.getCalendarOverlay(imgCfg.Width, imgCfg.Height, cfg, targetRatio)
-						if calPath != "" {
-							overlays = append(overlays, calPath)
-						}
-					}
-				}
-			}
-
-			if len(overlays) > 0 {
-				// 合成针对该显示器的最终图片
-				tempWallpaperPath := filepath.Join(store.GetBaseDir(), fmt.Sprintf("current_wallpaper_%d.jpg", m.ID))
-				if err := overlay.Composite(absOriginalPath, overlays, tempWallpaperPath); err == nil {
-					applyPath = tempWallpaperPath
-				} else {
-					slog.Error("Failed to composite image", "error", err, "monitor", m.ID)
-				}
-			}
+	// 为每个目标显示器独立合成并应用壁纸
+	for _, m := range targets {
+		applyPath, err := a.prepareWallpaperForMonitor(target, m, cfg)
+		if err != nil {
+			slog.Error("Failed to prepare wallpaper for monitor", "id", m.ID, "error", err)
+			continue
 		}
 
 		slog.Info("Applying wallpaper to monitor", "id", m.ID, "name", m.Name, "path", applyPath)
 		if err := wallpaper.SetOnMonitor(m.ID, applyPath); err != nil {
+			if strings.Contains(err.Error(), "IDesktopWallpaper not supported") {
+				slog.Warn("Multi-monitor wallpaper not supported by system, falling back to global setting")
+				_ = wallpaper.Set(applyPath)
+				// If not supported, we can break or just continue to let fallback happen for others
+				// but since it's a system-wide thing, we probably only need to set it once.
+				return nil
+			}
 			slog.Error("Failed to set wallpaper on monitor", "id", m.ID, "error", err)
 			// 如果设置特定显示器失败，尝试全局设置作为回退
 			_ = wallpaper.Set(applyPath)
@@ -599,6 +584,69 @@ func (a *App) ApplyHistory(key string, screenW, screenH int) error {
 	runtime.EventsEmit(a.ctx, "current-image-changed", *target)
 
 	return nil
+}
+
+func (a *App) prepareWallpaperForMonitor(target *store.HistoryItem, m wallpaper.Monitor, cfg store.Config) (string, error) {
+	absOriginalPath := filepath.Join(store.GetBaseDir(), target.ImagePath)
+
+	// 计算当前屏幕比例
+	targetRatio := 1.777777 // 默认 16:9
+	if m.Width > 0 && m.Height > 0 {
+		targetRatio = float64(m.Width) / float64(m.Height)
+	}
+
+	// 根据当前配置决定是否显示叠加层
+	showOverlay := cfg.OverlayMetadata || cfg.EnableCalendar
+	if !showOverlay {
+		return absOriginalPath, nil
+	}
+
+	var overlays []string
+
+	// 1. 水印 (针对图片固定)
+	if cfg.OverlayMetadata {
+		dayDir := filepath.Dir(target.ImagePath)
+		tempMeta := &bing.Meta{
+			Date:      target.Date,
+			Title:     target.Title,
+			Copyright: target.Copyright,
+		}
+		tempChosen := bing.Variant{
+			Variant: target.ChosenVariant,
+		}
+		wmPath := a.ensureWatermarkOverlay(tempMeta, tempChosen, dayDir, target.ImagePath, cfg, targetRatio)
+		if wmPath != "" {
+			overlays = append(overlays, filepath.Join(store.GetBaseDir(), wmPath))
+		}
+	}
+
+	// 2. 日历 (针对当前日期)
+	if cfg.EnableCalendar {
+		// 获取原图尺寸
+		file, err := os.Open(absOriginalPath)
+		if err == nil {
+			imgCfg, _, err := image.DecodeConfig(file)
+			file.Close()
+			if err == nil {
+				calPath := a.getCalendarOverlay(imgCfg.Width, imgCfg.Height, cfg, targetRatio)
+				if calPath != "" {
+					overlays = append(overlays, calPath)
+				}
+			}
+		}
+	}
+
+	if len(overlays) > 0 {
+		// 合成针对该显示器的最终图片
+		tempWallpaperPath := filepath.Join(store.GetBaseDir(), fmt.Sprintf("current_wallpaper_%d.jpg", m.ID))
+		if err := overlay.Composite(absOriginalPath, overlays, tempWallpaperPath); err == nil {
+			return tempWallpaperPath, nil
+		} else {
+			return "", fmt.Errorf("failed to composite image: %w", err)
+		}
+	}
+
+	return absOriginalPath, nil
 }
 
 func (a *App) DeleteHistory(key string) error {

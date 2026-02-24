@@ -151,3 +151,26 @@ export namespace store {
 
 }
 
+export namespace wallpaper {
+	
+	export class Monitor {
+	    ID: number;
+	    Name: string;
+	    Width: number;
+	    Height: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Monitor(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ID = source["ID"];
+	        this.Name = source["Name"];
+	        this.Width = source["Width"];
+	        this.Height = source["Height"];
+	    }
+	}
+
+}
+

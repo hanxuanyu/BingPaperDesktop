@@ -87,11 +87,15 @@ func setOnMonitor(monitorID int, path string) error {
 		return err
 	}
 
-	err = ole.CoInitializeEx(0, ole.COINIT_APARTMENTTHREADED)
-	if err != nil {
-		return err
+	hr := ole.CoInitializeEx(0, ole.COINIT_APARTMENTTHREADED)
+	if hr != nil {
+		code := hr.(*ole.OleError).Code()
+		if code != 0 && code != 1 && uint32(code) != 0x80010106 {
+			return fmt.Errorf("CoInitializeEx failed: %v", hr)
+		}
+	} else {
+		defer ole.CoUninitialize()
 	}
-	defer ole.CoUninitialize()
 
 	clsid, err := ole.CLSIDFromString("{C2CF27E3-0791-419B-A244-243CA06BB57D}")
 	if err != nil {
@@ -104,6 +108,12 @@ func setOnMonitor(monitorID int, path string) error {
 
 	unknown, err := ole.CreateInstance(clsid, iid)
 	if err != nil {
+		// Specific error check for "Class not registered"
+		if oerr, ok := err.(*ole.OleError); ok {
+			if uint32(oerr.Code()) == 0x80040154 {
+				return fmt.Errorf("IDesktopWallpaper not supported (Class not registered)")
+			}
+		}
 		return err
 	}
 	defer unknown.Release()
@@ -114,9 +124,9 @@ func setOnMonitor(monitorID int, path string) error {
 	// IDesktopWallpaper uses MonitorID which is a string (GUID or something)
 	// We can get it by index
 	var monitorCount uint32
-	hr, _, _ := syscall.SyscallN(wallpaper.VTable.GetMonitorDevicePathCount, uintptr(unsafe.Pointer(wallpaper)), uintptr(unsafe.Pointer(&monitorCount)))
-	if hr != 0 {
-		return fmt.Errorf("GetMonitorDevicePathCount failed: %08x", hr)
+	retCode, _, _ := syscall.SyscallN(wallpaper.VTable.GetMonitorDevicePathCount, uintptr(unsafe.Pointer(wallpaper)), uintptr(unsafe.Pointer(&monitorCount)))
+	if retCode != 0 {
+		return fmt.Errorf("GetMonitorDevicePathCount failed: %08x", retCode)
 	}
 
 	if uint32(monitorID) >= monitorCount {
@@ -124,16 +134,16 @@ func setOnMonitor(monitorID int, path string) error {
 	}
 
 	var monitorIDStr *uint16
-	hr, _, _ = syscall.SyscallN(wallpaper.VTable.GetMonitorDevicePathAt, uintptr(unsafe.Pointer(wallpaper)), uintptr(monitorID), uintptr(unsafe.Pointer(&monitorIDStr)))
-	if hr != 0 {
-		return fmt.Errorf("GetMonitorDevicePathAt failed: %08x", hr)
+	retCode, _, _ = syscall.SyscallN(wallpaper.VTable.GetMonitorDevicePathAt, uintptr(unsafe.Pointer(wallpaper)), uintptr(monitorID), uintptr(unsafe.Pointer(&monitorIDStr)))
+	if retCode != 0 {
+		return fmt.Errorf("GetMonitorDevicePathAt failed: %08x", retCode)
 	}
 	defer ole.CoTaskMemFree(uintptr(unsafe.Pointer(monitorIDStr)))
 
 	pathPtr, _ := syscall.UTF16PtrFromString(absPath)
-	hr, _, _ = syscall.SyscallN(wallpaper.VTable.SetWallpaper, uintptr(unsafe.Pointer(wallpaper)), uintptr(unsafe.Pointer(monitorIDStr)), uintptr(unsafe.Pointer(pathPtr)))
-	if hr != 0 {
-		return fmt.Errorf("SetWallpaper failed: %08x", hr)
+	retCode, _, _ = syscall.SyscallN(wallpaper.VTable.SetWallpaper, uintptr(unsafe.Pointer(wallpaper)), uintptr(unsafe.Pointer(monitorIDStr)), uintptr(unsafe.Pointer(pathPtr)))
+	if retCode != 0 {
+		return fmt.Errorf("SetWallpaper failed: %08x", retCode)
 	}
 
 	return nil

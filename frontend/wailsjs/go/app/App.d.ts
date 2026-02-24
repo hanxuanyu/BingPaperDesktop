@@ -4,8 +4,11 @@ import {http} from '../models';
 import {app} from '../models';
 import {store} from '../models';
 import {context} from '../models';
+import {wallpaper} from '../models';
 
 export function ApplyHistory(arg1:string,arg2:number,arg3:number):Promise<void>;
+
+export function ApplyHistoryToMonitor(arg1:string,arg2:number,arg3:number,arg4:number):Promise<void>;
 
 export function ApplyRandomHistory(arg1:number,arg2:number):Promise<void>;
 
@@ -34,6 +37,8 @@ export function GetContext():Promise<context.Context>;
 export function GetImageDataURL(arg1:string):Promise<string>;
 
 export function GetImageURL(arg1:string):Promise<string>;
+
+export function GetMonitors():Promise<Array<wallpaper.Monitor>>;
 
 export function GetThumbnailURL(arg1:string):Promise<string>;
 

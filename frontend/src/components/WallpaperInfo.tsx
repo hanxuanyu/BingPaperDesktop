@@ -1,16 +1,26 @@
-import { RefreshCw, Image as ImageIcon } from 'lucide-react';
+import { RefreshCw, Image as ImageIcon, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { store } from '../../wailsjs/go/models';
 
 interface WallpaperInfoProps {
   currentImage: store.HistoryItem | null;
   loading: boolean;
+  monitors: any[];
   onRefresh: () => void;
-  onApply: () => void;
+  onApply: (monitorId?: number) => void;
 }
 
-export function WallpaperInfo({ currentImage, loading, onRefresh, onApply }: WallpaperInfoProps) {
+export function WallpaperInfo({ currentImage, loading, monitors, onRefresh, onApply }: WallpaperInfoProps) {
+  const hasMultipleMonitors = monitors && monitors.length > 1;
+
   return (
     <div className="absolute bottom-12 left-12 right-12 flex flex-col md:flex-row items-end justify-between gap-6 pointer-events-none">
       <div className="flex flex-col gap-2 max-w-2xl pointer-events-auto">
@@ -45,15 +55,52 @@ export function WallpaperInfo({ currentImage, loading, onRefresh, onApply }: Wal
           <RefreshCw className={cn("h-5 w-5 mr-2", loading && "animate-spin")} />
           刷新
         </Button>
-        <Button 
-          size="lg" 
-          className="rounded-full px-8 shadow-xl bg-white text-black hover:bg-white/90 hover:scale-105 transition-transform"
-          onClick={onApply}
-          disabled={loading || !currentImage}
-        >
-          <ImageIcon className="h-5 w-5 mr-2" />
-          设为壁纸
-        </Button>
+
+        {hasMultipleMonitors ? (
+          <div className="flex">
+             <Button 
+              size="lg" 
+              className="rounded-l-full rounded-r-none px-8 shadow-xl bg-white text-black hover:bg-white/90 hover:scale-105 transition-transform border-r border-black/10"
+              onClick={() => onApply()}
+              disabled={loading || !currentImage}
+            >
+              <ImageIcon className="h-5 w-5 mr-2" />
+              全部应用
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  size="lg"
+                  className="rounded-r-full rounded-l-none px-3 shadow-xl bg-white text-black hover:bg-white/90 hover:scale-105 transition-transform"
+                  disabled={loading || !currentImage}
+                >
+                  <ChevronUp className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48 mb-2">
+                <DropdownMenuItem onClick={() => onApply()}>
+                  所有显示器
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {monitors.map((m) => (
+                  <DropdownMenuItem key={m.ID} onClick={() => onApply(m.ID)}>
+                    显示器 {m.ID + 1} ({m.Width}x{m.Height})
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        ) : (
+          <Button 
+            size="lg" 
+            className="rounded-full px-8 shadow-xl bg-white text-black hover:bg-white/90 hover:scale-105 transition-transform"
+            onClick={() => onApply()}
+            disabled={loading || !currentImage}
+          >
+            <ImageIcon className="h-5 w-5 mr-2" />
+            设为壁纸
+          </Button>
+        )}
       </div>
     </div>
   );

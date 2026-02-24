@@ -11,6 +11,8 @@ import {
   FetchToday, 
   ListHistory, 
   ApplyHistory, 
+  ApplyHistoryToMonitor,
+  GetMonitors,
   DeleteHistory, 
   ClearHistory, 
   GetImageURL,
@@ -38,6 +40,7 @@ function App() {
   const [prevImageDataURL, setPrevImageDataURL] = useState<string>('');
   const [isImgLoading, setIsImgLoading] = useState(false);
   const [history, setHistory] = useState<store.HistoryItem[]>([]);
+  const [monitors, setMonitors] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [wallpaperSupport, setWallpaperSupport] = useState<any>(true);
   const [platform, setPlatform] = useState<string>('');
@@ -68,6 +71,16 @@ function App() {
       setHistory(items); // Use the order from backend
     } catch (err) {
       console.error('Failed to load history:', err);
+    }
+  }, []);
+
+  // Load monitors
+  const loadMonitors = useCallback(async () => {
+    try {
+      const m = await GetMonitors();
+      setMonitors(m || []);
+    } catch (err) {
+      console.error('Failed to load monitors:', err);
     }
   }, []);
 
@@ -103,6 +116,7 @@ function App() {
   useEffect(() => {
     loadConfig();
     loadHistory();
+    loadMonitors();
     fetchToday(true);
     GetWallpaperSupport().then(setWallpaperSupport);
     Environment().then(env => setPlatform(env.platform));
@@ -185,14 +199,14 @@ function App() {
     }
   }, [currentImage]);
 
-  const handleApplyWallpaper = async () => {
+  const handleApplyWallpaper = async (monitorId: number = -1) => {
     if (!currentImage) return;
     setLoading(true);
     try {
       const w = Math.round(window.screen.width * window.devicePixelRatio);
       const h = Math.round(window.screen.height * window.devicePixelRatio);
-      await ApplyHistory(currentImage.key, w, h);
-      toast.success('壁纸设置成功');
+      await ApplyHistoryToMonitor(currentImage.key, monitorId, w, h);
+      toast.success(monitorId === -1 ? '所有屏幕壁纸设置成功' : `屏幕 ${monitorId + 1} 壁纸设置成功`);
     } catch (err) {
       toast.error('设置壁纸失败: ' + err);
     } finally {
@@ -218,7 +232,7 @@ function App() {
 
       if (currentImage) {
         // 配置更新后立即应用以触发重新渲染预览
-        handleApplyHistory(currentImage);
+        handleApplyHistory(currentImage, -1);
       }
       if (closeDialog) {
         setIsSettingsOpen(false);
@@ -228,13 +242,13 @@ function App() {
     }
   };
 
-  const handleApplyHistory = async (item: store.HistoryItem) => {
+  const handleApplyHistory = async (item: store.HistoryItem, monitorId: number = -1) => {
     setLoading(true);
     try {
       const w = Math.round(window.screen.width * window.devicePixelRatio);
       const h = Math.round(window.screen.height * window.devicePixelRatio);
-      await ApplyHistory(item.key, w, h);
-      toast.success('已切换并设为壁纸');
+      await ApplyHistoryToMonitor(item.key, monitorId, w, h);
+      toast.success(monitorId === -1 ? '已切换并设为壁纸' : `已切换并设为屏幕 ${monitorId + 1} 壁纸`);
     } catch (err) {
       toast.error('设置壁纸失败: ' + err);
     } finally {
@@ -348,6 +362,7 @@ function App() {
         <div className="absolute top-6 right-6 flex gap-3 z-10">
           <HistoryDrawer 
             history={history}
+            monitors={monitors}
             onApplyHistory={handleApplyHistory}
             onDeleteHistory={handleDeleteHistory}
             onClearHistory={handleClearHistory}
@@ -369,6 +384,7 @@ function App() {
         <WallpaperInfo 
           currentImage={currentImage}
           loading={loading}
+          monitors={monitors}
           onRefresh={() => fetchToday()}
           onApply={handleApplyWallpaper}
         />

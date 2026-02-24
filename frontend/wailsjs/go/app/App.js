@@ -6,6 +6,10 @@ export function ApplyHistory(arg1, arg2, arg3) {
   return window['go']['app']['App']['ApplyHistory'](arg1, arg2, arg3);
 }
 
+export function ApplyHistoryToMonitor(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['ApplyHistoryToMonitor'](arg1, arg2, arg3, arg4);
+}
+
 export function ApplyRandomHistory(arg1, arg2) {
   return window['go']['app']['App']['ApplyRandomHistory'](arg1, arg2);
 }
@@ -60,6 +64,10 @@ export function GetImageDataURL(arg1) {
 
 export function GetImageURL(arg1) {
   return window['go']['app']['App']['GetImageURL'](arg1);
+}
+
+export function GetMonitors() {
+  return window['go']['app']['App']['GetMonitors']();
 }
 
 export function GetThumbnailURL(arg1) {
