@@ -638,7 +638,18 @@ func (a *App) prepareWallpaperForMonitor(target *store.HistoryItem, m wallpaper.
 
 	if len(overlays) > 0 {
 		// 合成针对该显示器的最终图片
-		tempWallpaperPath := filepath.Join(store.GetBaseDir(), fmt.Sprintf("current_wallpaper_%d.jpg", m.ID))
+		// 在 macOS 上，如果文件路径完全相同，系统可能不会触发壁纸更新。
+		// 因此我们在文件名中加入时间戳（分钟级别即可，或者秒，为了确保每次应用都生效，秒更好）
+		suffix := time.Now().Unix()
+		tempWallpaperPath := filepath.Join(store.GetBaseDir(), fmt.Sprintf("current_wallpaper_%d_%d.jpg", m.ID, suffix))
+
+		// 清理该显示器之前的旧临时壁纸文件
+		if matches, err := filepath.Glob(filepath.Join(store.GetBaseDir(), fmt.Sprintf("current_wallpaper_%d_*.jpg", m.ID))); err == nil {
+			for _, oldPath := range matches {
+				_ = os.Remove(oldPath)
+			}
+		}
+
 		if err := overlay.Composite(absOriginalPath, overlays, tempWallpaperPath); err == nil {
 			return tempWallpaperPath, nil
 		} else {

@@ -20,13 +20,34 @@ func getMonitors() ([]Monitor, error) {
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
 		if strings.Contains(line, "Resolution:") {
-			parts := strings.Fields(line)
-			if len(parts) >= 2 {
-				res := parts[1]
-				wh := strings.Split(res, "x")
+			// Typical line: "Resolution: 3840 x 2160" or "Resolution: 3840x2160"
+			line = strings.TrimSpace(line)
+			parts := strings.Split(line, ":")
+			if len(parts) < 2 {
+				continue
+			}
+			resPart := strings.TrimSpace(parts[1])
+
+			// Use fields to handle both "3840 x 2160" and "3840x2160"
+			fields := strings.Fields(resPart)
+			var wStr, hStr string
+			if len(fields) >= 3 && fields[1] == "x" {
+				wStr = fields[0]
+				hStr = fields[2]
+			} else if len(fields) >= 1 {
+				// Handle "3840x2160" or "3840x2160(xxx)"
+				// First field might contain 'x'
+				wh := strings.Split(fields[0], "x")
 				if len(wh) == 2 {
-					w, _ := strconv.Atoi(wh[0])
-					h, _ := strconv.Atoi(wh[1])
+					wStr = wh[0]
+					hStr = wh[1]
+				}
+			}
+
+			if wStr != "" && hStr != "" {
+				w, _ := strconv.Atoi(wStr)
+				h, _ := strconv.Atoi(hStr)
+				if w > 0 && h > 0 {
 					monitors = append(monitors, Monitor{
 						ID:     len(monitors),
 						Name:   fmt.Sprintf("Display %d", len(monitors)+1),
