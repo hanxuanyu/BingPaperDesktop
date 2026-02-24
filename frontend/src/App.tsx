@@ -13,7 +13,8 @@ import {
   ApplyHistory, 
   DeleteHistory, 
   ClearHistory, 
-  GetImageDataURL,
+  GetImageURL,
+  GetThumbnailURL,
   CleanupByRetainDays,
   CleanupLogs,
   GetWallpaperSupport,
@@ -161,7 +162,7 @@ function App() {
       // 主界面始终显示原图
       const path = currentImage.image_path;
       
-      GetImageDataURL(path).then(async (url) => {
+      GetImageURL(path).then(async (url) => {
         if (url === currentImageDataURL) return;
 
         // 预加载图片确保切换时不闪烁

@@ -3,7 +3,7 @@ import { Image as ImageIcon, CheckCircle2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { store } from '../../wailsjs/go/models';
-import { GetImageDataURL } from '../../wailsjs/go/app/App';
+import { GetThumbnailURL } from '../../wailsjs/go/app/App';
 
 interface HistoryItemCardProps {
   item: store.HistoryItem;
@@ -16,7 +16,7 @@ export function HistoryItemCard({ item, onApply, onDelete }: HistoryItemCardProp
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    GetImageDataURL(item.image_path).then(setThumb).catch(console.error);
+    GetThumbnailURL(item.image_path).then(setThumb).catch(console.error);
   }, [item.image_path]);
 
   return (

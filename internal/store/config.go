@@ -110,7 +110,7 @@ func initLocked() error {
 	}
 
 	// Ensure directories exist
-	dirs := []string{"data", "logs"}
+	dirs := []string{"data", "logs", "thumbnails"}
 	for _, d := range dirs {
 		if err := os.MkdirAll(filepath.Join(baseDir, d), 0755); err != nil {
 			return err
@@ -135,6 +135,10 @@ func GetConfigPath() string {
 
 func GetDataDir() string {
 	return filepath.Join(baseDir, "data")
+}
+
+func GetThumbnailsDir() string {
+	return filepath.Join(baseDir, "thumbnails")
 }
 
 func GetLogsDir() string {

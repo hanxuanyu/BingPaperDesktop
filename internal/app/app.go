@@ -10,6 +10,7 @@ import (
 	_ "image/png"
 	"log/slog"
 	"math/rand"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -386,14 +387,14 @@ func (a *App) ensureWatermarkOverlay(meta *bing.Meta, chosen bing.Variant, dayDi
 	}
 
 	slog.Info("Requesting frontend to render watermark overlay", "image", relImagePath)
-	dataURL, err := a.GetImageDataURL(relImagePath)
+	url, err := a.GetImageURL(relImagePath)
 	if err != nil {
-		slog.Error("Failed to get image data url", "error", err)
+		slog.Error("Failed to get image url", "error", err)
 		return ""
 	}
 
 	runtime.EventsEmit(a.ctx, "render-watermark", OverlayRequest{
-		ImagePath:       dataURL,
+		ImagePath:       url,
 		Title:           meta.Title,
 		Date:            meta.Date,
 		Copyright:       meta.Copyright,
@@ -697,6 +698,74 @@ func (a *App) GetImageDataURL(relPath string) (string, error) {
 
 	encoded := base64.StdEncoding.EncodeToString(data)
 	return fmt.Sprintf("data:%s;base64,%s", mime, encoded), nil
+}
+
+func (a *App) GetThumbnailURL(relPath string) (string, error) {
+	if relPath == "" {
+		return "", nil
+	}
+
+	// For thumbnails, we store them in a separate directory structure mirroring the data directory
+	thumbRelPath := filepath.Join("thumbnails", relPath)
+	thumbAbsPath := filepath.Join(store.GetBaseDir(), thumbRelPath)
+
+	if _, err := os.Stat(thumbAbsPath); os.IsNotExist(err) {
+		srcAbsPath := filepath.Join(store.GetBaseDir(), relPath)
+		if _, err := os.Stat(srcAbsPath); err != nil {
+			return "", err
+		}
+
+		if err := os.MkdirAll(filepath.Dir(thumbAbsPath), 0755); err != nil {
+			return "", err
+		}
+
+		slog.Info("Generating thumbnail", "src", relPath)
+		if err := util.GenerateThumbnail(srcAbsPath, thumbAbsPath, 400); err != nil {
+			slog.Error("Failed to generate thumbnail", "error", err)
+			return "/images/" + relPath, nil // Fallback to full image
+		}
+	}
+
+	// Replace backslashes with forward slashes for URL consistency
+	urlPath := filepath.ToSlash(thumbRelPath)
+	return "/images/" + urlPath, nil
+}
+
+func (a *App) GetImageURL(relPath string) (string, error) {
+	if relPath == "" {
+		return "", nil
+	}
+	urlPath := filepath.ToSlash(relPath)
+	return "/images/" + urlPath, nil
+}
+
+func (a *App) AssetsHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		if strings.HasPrefix(path, "/images/") {
+			relPath := strings.TrimPrefix(path, "/images/")
+			// Convert URL slashes back to system separators
+			relPath = filepath.FromSlash(relPath)
+			absPath := filepath.Join(store.GetBaseDir(), relPath)
+
+			// Basic security check: ensure the path is within baseDir
+			if !strings.HasPrefix(absPath, store.GetBaseDir()) {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+
+			if _, err := os.Stat(absPath); os.IsNotExist(err) {
+				http.NotFound(w, r)
+				return
+			}
+
+			// Add caching headers for performance
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			http.ServeFile(w, r, absPath)
+			return
+		}
+		http.NotFound(w, r)
+	})
 }
 
 func (a *App) SubmitWatermark(base64Data string) {

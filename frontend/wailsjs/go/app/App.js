@@ -14,6 +14,10 @@ export function ApplyWallpaper() {
   return window['go']['app']['App']['ApplyWallpaper']();
 }
 
+export function AssetsHandler() {
+  return window['go']['app']['App']['AssetsHandler']();
+}
+
 export function BrowserOpenURL(arg1) {
   return window['go']['app']['App']['BrowserOpenURL'](arg1);
 }
@@ -52,6 +56,14 @@ export function GetContext() {
 
 export function GetImageDataURL(arg1) {
   return window['go']['app']['App']['GetImageDataURL'](arg1);
+}
+
+export function GetImageURL(arg1) {
+  return window['go']['app']['App']['GetImageURL'](arg1);
+}
+
+export function GetThumbnailURL(arg1) {
+  return window['go']['app']['App']['GetThumbnailURL'](arg1);
 }
 
 export function GetVersionInfo() {
