@@ -45,32 +45,65 @@ export async function renderWatermark(data: any): Promise<string> {
 
   // 1. Draw Watermark if enabled
   if (enable_watermark) {
-    drawWatermark(ctx, canvas, title, date, copyright, variant);
+    drawWatermark(ctx, canvas, title, date, copyright, variant, data.target_ratio);
   }
 
   // 2. Draw Calendar if enabled
   if (enable_calendar) {
     console.log("Drawing calendar...");
-    drawCalendar(ctx, canvas, date, holiday_data);
+    drawCalendar(ctx, canvas, date, holiday_data, data.target_ratio);
   }
 
   return canvas.toDataURL(only_overlay ? 'image/png' : 'image/jpeg', only_overlay ? undefined : 0.95);
 }
 
-function drawWatermark(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, title: string, date: string, copyright: string, variant: string) {
-  // Watermark style
-  const paddingX = canvas.width * 0.05;
-  const paddingY = canvas.height * 0.05;
-  const titleFontSize = Math.max(24, Math.floor(canvas.height * 0.045));
-  const copyrightFontSize = Math.max(14, Math.floor(canvas.height * 0.018));
-  const tagFontSize = Math.max(12, Math.floor(canvas.height * 0.015));
+function calculateSafeArea(width: number, height: number, targetRatio: number) {
+  const currentRatio = width / height;
+  targetRatio = targetRatio || 1.777777; // 默认 16:9
 
-  // Draw bottom gradient
-  const gradient = ctx.createLinearGradient(0, canvas.height * 0.7, 0, canvas.height);
+  let visibleWidth = width;
+  let visibleHeight = height;
+
+  if (currentRatio > targetRatio) {
+    // 图片太宽，左右剪
+    visibleWidth = height * targetRatio;
+  } else if (currentRatio < targetRatio) {
+    // 图片太窄，上下剪
+    visibleHeight = width / targetRatio;
+  }
+
+  const rightX = (width + visibleWidth) / 2;
+  const leftX = (width - visibleWidth) / 2;
+  const topY = (height - visibleHeight) / 2;
+  const bottomY = (height + visibleHeight) / 2;
+
+  // 基础边距：可见高度的 5%
+  const paddingX = visibleWidth * 0.04; 
+  const paddingY = visibleHeight * 0.04;
+
+  return { 
+    right: rightX - paddingX, 
+    left: leftX + paddingX,
+    top: topY + paddingY, 
+    bottom: bottomY - paddingY,
+    visibleWidth,
+    visibleHeight
+  };
+}
+
+function drawWatermark(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, title: string, date: string, copyright: string, variant: string, targetRatio: number) {
+  const safeArea = calculateSafeArea(canvas.width, canvas.height, targetRatio);
+  
+  const titleFontSize = Math.max(24, Math.floor(safeArea.visibleHeight * 0.045));
+  const copyrightFontSize = Math.max(14, Math.floor(safeArea.visibleHeight * 0.018));
+  const tagFontSize = Math.max(12, Math.floor(safeArea.visibleHeight * 0.015));
+
+  // Draw bottom gradient (可选，覆盖整个宽度还是仅可见区域？覆盖整个宽度比较保险)
+  const gradient = ctx.createLinearGradient(0, canvas.height - safeArea.visibleHeight * 0.3, 0, canvas.height);
   gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
   gradient.addColorStop(1, 'rgba(0, 0, 0, 0.6)');
   ctx.fillStyle = gradient;
-  ctx.fillRect(0, canvas.height * 0.7, canvas.width, canvas.height * 0.3);
+  ctx.fillRect(0, canvas.height - safeArea.visibleHeight * 0.3, canvas.width, safeArea.visibleHeight * 0.3);
 
   // Reset shadow for text
   ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
@@ -78,37 +111,48 @@ function drawWatermark(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement,
   ctx.shadowOffsetX = 2;
   ctx.shadowOffsetY = 2;
 
+  // 计算位置（从下往上）
+  const tagPaddingV = tagFontSize * 0.3;
+  const tagY = safeArea.bottom;
+  const tagRectHeight = tagFontSize + tagPaddingV * 2;
+  
+  const copyrightY = tagY - tagRectHeight - (tagFontSize * 1.2);
+  const titleY = copyrightY - (copyrightFontSize * 1.8);
+  
+  const rightX = safeArea.right;
+
+  ctx.save();
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'bottom';
+  ctx.fillStyle = 'white';
+
   // Draw Title
   ctx.font = `bold ${titleFontSize}px "Segoe UI", Roboto, "Helvetica Neue", sans-serif`;
-  ctx.fillStyle = 'white';
-  ctx.textBaseline = 'bottom';
-  const titleY = canvas.height - paddingY - (copyrightFontSize * 2.5);
-  ctx.fillText(title, paddingX, titleY);
+  ctx.fillText(title, rightX, titleY);
 
   // Draw Copyright
   ctx.shadowBlur = 8;
   ctx.font = `${copyrightFontSize}px "Segoe UI", Roboto, "Helvetica Neue", sans-serif`;
   ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-  const copyrightY = canvas.height - paddingY - (tagFontSize * 2.0);
-  ctx.fillText(copyright, paddingX, copyrightY);
+  ctx.fillText(copyright, rightX, copyrightY);
+  ctx.restore();
 
   // Draw Tags
-  ctx.shadowBlur = 4;
+  ctx.save();
   ctx.font = `${tagFontSize}px "Segoe UI", Roboto, "Helvetica Neue", sans-serif`;
+  ctx.textBaseline = 'bottom';
   
   const tags = [date, variant || "UHD"];
-  let currentTagX = paddingX;
-  const tagY = canvas.height - paddingY;
   const tagPaddingH = tagFontSize * 0.8;
-  const tagPaddingV = tagFontSize * 0.3;
   const tagRadius = 4;
+  let currentTagX = rightX;
 
-  tags.forEach(tag => {
+  // 靠右显示，所以倒序处理标签
+  tags.slice().reverse().forEach(tag => {
     const tagWidth = ctx.measureText(tag).width;
     const rectWidth = tagWidth + tagPaddingH * 2;
-    const rectHeight = tagFontSize + tagPaddingV * 2;
-    const rectX = currentTagX;
-    const rectY = tagY - rectHeight;
+    const rectX = currentTagX - rectWidth;
+    const rectY = tagY - tagRectHeight;
 
     ctx.save();
     ctx.shadowBlur = 0;
@@ -123,23 +167,26 @@ function drawWatermark(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement,
     // @ts-ignore
     if (ctx.roundRect) {
       // @ts-ignore
-      ctx.roundRect(rectX, rectY, rectWidth, rectHeight, tagRadius);
+      ctx.roundRect(rectX, rectY, rectWidth, tagRectHeight, tagRadius);
     } else {
-      ctx.rect(rectX, rectY, rectWidth, rectHeight);
+      ctx.rect(rectX, rectY, rectWidth, tagRectHeight);
     }
     ctx.fill();
     ctx.stroke();
     ctx.restore();
 
     ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.textAlign = 'left';
     ctx.fillText(tag, rectX + tagPaddingH, tagY - tagPaddingV);
-    currentTagX += rectWidth + 12;
+    
+    currentTagX -= (rectWidth + 12);
   });
+  ctx.restore();
 }
 
-function drawCalendar(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, dateStr: string, holidayData: any[]) {
+function drawCalendar(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, dateStr: string, holidayData: any[], targetRatio: number) {
   try {
-    // 解析日期
+    // ... 解析日期代码保持不变 ...
     const dateParts = dateStr.split('-');
     let year: number, month: number, today: number;
     if (dateParts.length === 3) {
@@ -160,11 +207,19 @@ function drawCalendar(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, 
     console.log(`Calendar for: ${year}-${month}-${today}`);
 
     // 日历配置
-    const scale = canvas.height / 1080;
-    const padding = 30 * scale;
+    const safeArea = calculateSafeArea(canvas.width, canvas.height, targetRatio);
+    const scale = safeArea.visibleHeight / 1080;
+
     const boxW = 320 * scale;
-    const boxX = canvas.width - boxW - padding;
-    const boxY = padding;
+    const boxX = safeArea.right - boxW;
+    const boxY = safeArea.top;
+
+    // 0. 绘制右上角阴影增强对比度
+    const topGradient = ctx.createLinearGradient(0, boxY, 0, boxY + 200 * scale);
+    topGradient.addColorStop(0, 'rgba(0, 0, 0, 0.4)');
+    topGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = topGradient;
+    ctx.fillRect(0, 0, canvas.width, boxY + 200 * scale);
     
     // 计算网格和高度
     const firstDay = new Date(year, month - 1, 1).getDay(); // 0-6

@@ -189,7 +189,9 @@ function App() {
     if (!currentImage) return;
     setLoading(true);
     try {
-      await ApplyHistory(currentImage.key);
+      const w = Math.round(window.screen.width * window.devicePixelRatio);
+      const h = Math.round(window.screen.height * window.devicePixelRatio);
+      await ApplyHistory(currentImage.key, w, h);
       toast.success('壁纸设置成功');
     } catch (err) {
       toast.error('设置壁纸失败: ' + err);
@@ -229,7 +231,9 @@ function App() {
   const handleApplyHistory = async (item: store.HistoryItem) => {
     setLoading(true);
     try {
-      await ApplyHistory(item.key);
+      const w = Math.round(window.screen.width * window.devicePixelRatio);
+      const h = Math.round(window.screen.height * window.devicePixelRatio);
+      await ApplyHistory(item.key, w, h);
       toast.success('已切换并设为壁纸');
     } catch (err) {
       toast.error('设置壁纸失败: ' + err);

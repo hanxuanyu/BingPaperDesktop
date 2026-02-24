@@ -68,6 +68,7 @@ type OverlayRequest struct {
 	OnlyOverlay     bool               `json:"only_overlay"`
 	Width           int                `json:"width"`
 	Height          int                `json:"height"`
+	TargetRatio     float64            `json:"target_ratio"` // 目标屏幕比例 (如 1.777, 1.333)
 }
 
 type CurrentResult struct {
@@ -281,7 +282,9 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 
 	// 5. 准备叠加层
 	if cfg.OverlayMetadata {
-		a.ensureWatermarkOverlay(meta, chosen, dayDir, relImagePath, cfg)
+		// 同时生成 16:9 和 4:3 两个版本
+		a.ensureWatermarkOverlay(meta, chosen, dayDir, relImagePath, cfg, 16.0/9.0)
+		a.ensureWatermarkOverlay(meta, chosen, dayDir, relImagePath, cfg, 4.0/3.0)
 	}
 
 	// 6. 保存到历史记录
@@ -306,11 +309,11 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 	if cfg.AutoApply {
 		if cfg.RandomHistory {
 			slog.Info("Random history enabled, picking a random wallpaper from history")
-			return *a.lastFetch, a.ApplyRandomHistory()
+			return *a.lastFetch, a.ApplyRandomHistory(realW, realH)
 		}
 
 		slog.Info("Auto applying wallpaper")
-		a.ApplyWallpaper()
+		a.ApplyWallpaper(realW, realH)
 	} else {
 		// 通知前端图片已更新，但未自动应用
 		runtime.EventsEmit(a.ctx, "current-image-changed", item)
@@ -342,14 +345,14 @@ func (a *App) saveMetaJson(meta *bing.Meta, absDayDir string) {
 	}
 }
 
-func (a *App) ApplyWallpaper() error {
+func (a *App) ApplyWallpaper(screenW, screenH int) error {
 	if a.lastFetch == nil || !a.lastFetch.Success {
 		return fmt.Errorf("no current image to apply")
 	}
-	return a.ApplyHistory(a.lastFetch.Item.Key)
+	return a.ApplyHistory(a.lastFetch.Item.Key, screenW, screenH)
 }
 
-func (a *App) ApplyRandomHistory() error {
+func (a *App) ApplyRandomHistory(screenW, screenH int) error {
 	idx, err := store.LoadIndex()
 	if err != nil {
 		return err
@@ -363,7 +366,7 @@ func (a *App) ApplyRandomHistory() error {
 	target := idx.Items[r.Intn(len(idx.Items))]
 
 	slog.Info("Randomly selected from history", "key", target.Key, "title", target.Title)
-	return a.ApplyHistory(target.Key)
+	return a.ApplyHistory(target.Key, screenW, screenH)
 }
 
 func (a *App) ListHistory() ([]store.HistoryItem, error) {
@@ -374,19 +377,27 @@ func (a *App) ListHistory() ([]store.HistoryItem, error) {
 	return idx.Items, nil
 }
 
-// ensureWatermarkOverlay 确保水印叠加层存在 (PNG 格式)
-func (a *App) ensureWatermarkOverlay(meta *bing.Meta, chosen bing.Variant, dayDir, relImagePath string, cfg store.Config) string {
+// ensureWatermarkOverlay 确保特定比例的水印叠加层存在 (PNG 格式)
+func (a *App) ensureWatermarkOverlay(meta *bing.Meta, chosen bing.Variant, dayDir, relImagePath string, cfg store.Config, targetRatio float64) string {
 	a.wmMu.Lock()
 	defer a.wmMu.Unlock()
 
-	relPath := filepath.Join(dayDir, "watermark.png")
+	// 归一化比例为 16:9 或 4:3
+	normRatio := 1.777777
+	ratioSuffix := "_16_9"
+	if targetRatio < 1.5 {
+		normRatio = 1.333333
+		ratioSuffix = "_4_3"
+	}
+
+	relPath := filepath.Join(dayDir, "watermark"+ratioSuffix+".png")
 	absPath := filepath.Join(store.GetBaseDir(), relPath)
 
 	if _, err := os.Stat(absPath); err == nil {
 		return relPath
 	}
 
-	slog.Info("Requesting frontend to render watermark overlay", "image", relImagePath)
+	slog.Info("Requesting frontend to render watermark overlay", "image", relImagePath, "ratio", normRatio)
 	url, err := a.GetImageURL(relImagePath)
 	if err != nil {
 		slog.Error("Failed to get image url", "error", err)
@@ -402,6 +413,7 @@ func (a *App) ensureWatermarkOverlay(meta *bing.Meta, chosen bing.Variant, dayDi
 		EnableWatermark: true,
 		EnableCalendar:  false,
 		OnlyOverlay:     true,
+		TargetRatio:     normRatio,
 	})
 
 	select {
@@ -420,8 +432,8 @@ func (a *App) ensureWatermarkOverlay(meta *bing.Meta, chosen bing.Variant, dayDi
 	}
 }
 
-// getCalendarOverlay 获取当日的日历叠加层，按日期和分辨率缓存
-func (a *App) getCalendarOverlay(width, height int, cfg store.Config) string {
+// getCalendarOverlay 获取当日的特定比例日历叠加层，按日期和分辨率缓存
+func (a *App) getCalendarOverlay(width, height int, cfg store.Config, targetRatio float64) string {
 	a.wmMu.Lock()
 	defer a.wmMu.Unlock()
 
@@ -434,14 +446,23 @@ func (a *App) getCalendarOverlay(width, height int, cfg store.Config) string {
 	if cfg.EnableHoliday {
 		suffix = "h"
 	}
-	relPath := filepath.Join(dayDir, "calendar_cache_"+fmt.Sprintf("%dx%d", width, height)+suffix+".png")
+
+	// 归一化比例为 16:9 或 4:3
+	normRatio := 1.777777
+	ratioSuffix := "_16_9"
+	if targetRatio < 1.5 {
+		normRatio = 1.333333
+		ratioSuffix = "_4_3"
+	}
+
+	relPath := filepath.Join(dayDir, "calendar_cache_"+fmt.Sprintf("%dx%d", width, height)+suffix+ratioSuffix+".png")
 	absPath := filepath.Join(store.GetBaseDir(), relPath)
 
 	if _, err := os.Stat(absPath); err == nil {
 		return absPath
 	}
 
-	slog.Info("Requesting frontend to render calendar overlay", "date", today, "size", fmt.Sprintf("%dx%d", width, height))
+	slog.Info("Requesting frontend to render calendar overlay", "date", today, "size", fmt.Sprintf("%dx%d", width, height), "ratio", normRatio)
 
 	var holidayData []store.HolidayDay
 	if cfg.EnableHoliday {
@@ -459,6 +480,7 @@ func (a *App) getCalendarOverlay(width, height int, cfg store.Config) string {
 		OnlyOverlay:     true,
 		Width:           width,
 		Height:          height,
+		TargetRatio:     normRatio,
 	})
 
 	select {
@@ -477,7 +499,7 @@ func (a *App) getCalendarOverlay(width, height int, cfg store.Config) string {
 	}
 }
 
-func (a *App) ApplyHistory(key string) error {
+func (a *App) ApplyHistory(key string, screenW, screenH int) error {
 	idx, err := store.LoadIndex()
 	if err != nil {
 		return err
@@ -498,6 +520,12 @@ func (a *App) ApplyHistory(key string) error {
 	cfg, _ := store.LoadConfig()
 	absOriginalPath := filepath.Join(store.GetBaseDir(), target.ImagePath)
 
+	// 计算当前屏幕比例
+	targetRatio := 1.777777 // 默认 16:9
+	if screenW > 0 && screenH > 0 {
+		targetRatio = float64(screenW) / float64(screenH)
+	}
+
 	// 根据当前配置决定是否显示叠加层
 	showOverlay := cfg.OverlayMetadata || cfg.EnableCalendar
 	applyPath := absOriginalPath
@@ -516,7 +544,7 @@ func (a *App) ApplyHistory(key string) error {
 			tempChosen := bing.Variant{
 				Variant: target.ChosenVariant,
 			}
-			wmPath := a.ensureWatermarkOverlay(tempMeta, tempChosen, dayDir, target.ImagePath, cfg)
+			wmPath := a.ensureWatermarkOverlay(tempMeta, tempChosen, dayDir, target.ImagePath, cfg, targetRatio)
 			if wmPath != "" {
 				overlays = append(overlays, filepath.Join(store.GetBaseDir(), wmPath))
 			}
@@ -530,7 +558,7 @@ func (a *App) ApplyHistory(key string) error {
 				imgCfg, _, err := image.DecodeConfig(file)
 				file.Close()
 				if err == nil {
-					calPath := a.getCalendarOverlay(imgCfg.Width, imgCfg.Height, cfg)
+					calPath := a.getCalendarOverlay(imgCfg.Width, imgCfg.Height, cfg, targetRatio)
 					if calPath != "" {
 						overlays = append(overlays, calPath)
 					}

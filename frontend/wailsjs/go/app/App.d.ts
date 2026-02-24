@@ -5,11 +5,11 @@ import {app} from '../models';
 import {store} from '../models';
 import {context} from '../models';
 
-export function ApplyHistory(arg1:string):Promise<void>;
+export function ApplyHistory(arg1:string,arg2:number,arg3:number):Promise<void>;
 
-export function ApplyRandomHistory():Promise<void>;
+export function ApplyRandomHistory(arg1:number,arg2:number):Promise<void>;
 
-export function ApplyWallpaper():Promise<void>;
+export function ApplyWallpaper(arg1:number,arg2:number):Promise<void>;
 
 export function AssetsHandler():Promise<http.Handler>;
 
