@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"image/draw"
 	"image/jpeg"
+	_ "image/png"
 	"os"
 	"strings"
 
@@ -104,4 +105,52 @@ func wrapText(text string, maxChars int) []string {
 		lines = append(lines, line)
 	}
 	return lines
+}
+
+func Composite(backgroundPath string, overlays []string, destPath string) error {
+	bgFile, err := os.Open(backgroundPath)
+	if err != nil {
+		return err
+	}
+	defer bgFile.Close()
+
+	bgImg, _, err := image.Decode(bgFile)
+	if err != nil {
+		return err
+	}
+
+	bounds := bgImg.Bounds()
+	rgba := image.NewRGBA(bounds)
+	draw.Draw(rgba, bounds, bgImg, bounds.Min, draw.Src)
+
+	for _, overlayPath := range overlays {
+		if overlayPath == "" {
+			continue
+		}
+		if _, err := os.Stat(overlayPath); os.IsNotExist(err) {
+			continue
+		}
+
+		ovFile, err := os.Open(overlayPath)
+		if err != nil {
+			return err
+		}
+
+		ovImg, _, err := image.Decode(ovFile)
+		ovFile.Close()
+		if err != nil {
+			continue
+		}
+
+		// Draw overlay onto rgba
+		draw.Draw(rgba, rgba.Bounds(), ovImg, image.Point{}, draw.Over)
+	}
+
+	out, err := os.Create(destPath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	return jpeg.Encode(out, rgba, &jpeg.Options{Quality: 95})
 }

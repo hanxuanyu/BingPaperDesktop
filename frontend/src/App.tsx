@@ -132,13 +132,17 @@ function App() {
       toast.dismiss();
     });
 
-    // Watermark rendering listener
+    // Watermark/Overlay rendering listener
     const unregister = EventsOn('render-watermark', async (data: any) => {
       try {
         const base64Data = await renderWatermark(data);
+        if (!base64Data) {
+           throw new Error("Render returned empty data");
+        }
         await SubmitWatermark(base64Data);
       } catch (err) {
-        console.error('Watermark render error:', err);
+        console.error('Render error:', err);
+        toast.error('图片叠加渲染失败: ' + err);
         await SubmitWatermark(""); // Fallback
       }
     });
@@ -154,9 +158,8 @@ function App() {
   // Update background image when currentImage changes
   useEffect(() => {
     if (currentImage) {
-      const path = (config?.overlay_metadata && currentImage.watermark_path) 
-        ? currentImage.watermark_path 
-        : currentImage.image_path;
+      // 主界面始终显示原图
+      const path = currentImage.image_path;
       
       GetImageDataURL(path).then(async (url) => {
         if (url === currentImageDataURL) return;
@@ -179,14 +182,13 @@ function App() {
       setPrevImageDataURL(currentImageDataURL);
       setCurrentImageDataURL('');
     }
-  }, [currentImage, config?.overlay_metadata]);
+  }, [currentImage]);
 
   const handleApplyWallpaper = async () => {
     if (!currentImage) return;
     setLoading(true);
     try {
-      // Use ApplyHistory with the current key to ensure we apply the displayed image
-      await ApplyHistory(currentImage.key, config?.overlay_metadata || false);
+      await ApplyHistory(currentImage.key);
       toast.success('壁纸设置成功');
     } catch (err) {
       toast.error('设置壁纸失败: ' + err);
@@ -198,8 +200,23 @@ function App() {
   const handleSaveConfig = async (newCfg: store.Config, closeDialog = false) => {
     try {
       await SaveConfig(newCfg);
+      
+      const holidaySwitchedOn = !config?.enable_holiday && newCfg.enable_holiday;
+      const holidayUrlChanged = config?.enable_holiday && newCfg.enable_holiday && config?.holiday_api_url !== newCfg.holiday_api_url;
+      
       setConfig(newCfg);
       toast.success('配置已保存');
+
+      if (holidaySwitchedOn) {
+        toast.info('节假日显示已开启，正在后台下载数据...');
+      } else if (holidayUrlChanged) {
+        toast.info('节假日数据源已更新，正在重新下载数据...');
+      }
+
+      if (currentImage) {
+        // 配置更新后立即应用以触发重新渲染预览
+        handleApplyHistory(currentImage);
+      }
       if (closeDialog) {
         setIsSettingsOpen(false);
       }
@@ -211,7 +228,7 @@ function App() {
   const handleApplyHistory = async (item: store.HistoryItem) => {
     setLoading(true);
     try {
-      await ApplyHistory(item.key, config?.overlay_metadata || false);
+      await ApplyHistory(item.key);
       toast.success('已切换并设为壁纸');
     } catch (err) {
       toast.error('设置壁纸失败: ' + err);

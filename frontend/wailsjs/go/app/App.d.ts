@@ -4,11 +4,11 @@ import {app} from '../models';
 import {store} from '../models';
 import {context} from '../models';
 
-export function ApplyHistory(arg1:string,arg2:boolean):Promise<void>;
+export function ApplyHistory(arg1:string):Promise<void>;
 
-export function ApplyRandomHistory(arg1:boolean):Promise<void>;
+export function ApplyRandomHistory():Promise<void>;
 
-export function ApplyWallpaper(arg1:boolean):Promise<void>;
+export function ApplyWallpaper():Promise<void>;
 
 export function BrowserOpenURL(arg1:string):Promise<void>;
 

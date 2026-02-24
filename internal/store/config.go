@@ -26,6 +26,9 @@ type Config struct {
 	LogMaxSize      int    `json:"log_max_size"` // MB
 	AutoStart       bool   `json:"auto_start"`
 	HideDockIcon    bool   `json:"hide_dock_icon"`
+	EnableCalendar  bool   `json:"enable_calendar"`
+	EnableHoliday   bool   `json:"enable_holiday"`
+	HolidayApiUrl   string `json:"holiday_api_url"`
 }
 
 var (
@@ -139,8 +142,9 @@ func GetLogsDir() string {
 }
 
 const (
-	DefaultBingUrl   = "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&uhd=1&mkt=zh-CN"
-	DefaultCustomUrl = "https://bing.coding.icu/api/v1/image/today/meta"
+	DefaultBingUrl    = "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&uhd=1&mkt=zh-CN"
+	DefaultCustomUrl  = "https://bing.coding.icu/api/v1/image/today/meta"
+	DefaultHolidayUrl = "https://github.com/NateScarlet/holiday-cn/raw/refs/heads/master/yyyy.json"
 )
 
 func DefaultConfig() Config {
@@ -149,9 +153,9 @@ func DefaultConfig() Config {
 		BingApiUrl:      DefaultBingUrl,
 		CustomApiUrl:    DefaultCustomUrl,
 		ApiMetaUrl:      DefaultBingUrl,
-		AutoApply:       false,
+		AutoApply:       true,
 		OverlayMetadata: false,
-		ForceUHD:        false,
+		ForceUHD:        true,
 		ScheduleMode:    "daily",
 		DailyTime:       "08:30",
 		IntervalMinutes: 60,
@@ -161,6 +165,9 @@ func DefaultConfig() Config {
 		LogMaxSize:      10,
 		AutoStart:       false,
 		HideDockIcon:    false,
+		EnableCalendar:  false,
+		EnableHoliday:   true,
+		HolidayApiUrl:   DefaultHolidayUrl,
 	}
 }
 
@@ -193,7 +200,7 @@ func LoadConfig() (Config, error) {
 	// Check if any expected fields are missing in the file
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err == nil {
-		newFields := []string{"log_retain_days", "log_max_size", "auto_start", "hide_dock_icon", "random_history"}
+		newFields := []string{"log_retain_days", "log_max_size", "auto_start", "hide_dock_icon", "random_history", "enable_calendar", "enable_holiday", "holiday_api_url"}
 		for _, f := range newFields {
 			if _, ok := raw[f]; !ok {
 				migrated = true
@@ -216,6 +223,10 @@ func LoadConfig() (Config, error) {
 		} else {
 			cfg.CustomApiUrl = DefaultCustomUrl
 		}
+		migrated = true
+	}
+	if cfg.HolidayApiUrl == "" {
+		cfg.HolidayApiUrl = DefaultHolidayUrl
 		migrated = true
 	}
 

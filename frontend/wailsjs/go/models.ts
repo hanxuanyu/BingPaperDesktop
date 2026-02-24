@@ -72,6 +72,9 @@ export namespace store {
 	    log_max_size: number;
 	    auto_start: boolean;
 	    hide_dock_icon: boolean;
+	    enable_calendar: boolean;
+	    enable_holiday: boolean;
+	    holiday_api_url: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Config(source);
@@ -95,6 +98,9 @@ export namespace store {
 	        this.log_max_size = source["log_max_size"];
 	        this.auto_start = source["auto_start"];
 	        this.hide_dock_icon = source["hide_dock_icon"];
+	        this.enable_calendar = source["enable_calendar"];
+	        this.enable_holiday = source["enable_holiday"];
+	        this.holiday_api_url = source["holiday_api_url"];
 	    }
 	}
 	export class HistoryItem {

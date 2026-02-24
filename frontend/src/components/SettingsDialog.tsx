@@ -273,6 +273,46 @@ export function SettingsDialog({
 
                         <div className="flex items-center justify-between">
                           <div className="space-y-0.5">
+                            <Label className="text-base">叠加日历</Label>
+                            <p className="text-xs text-muted-foreground">在壁纸右上角同步渲染当月日历</p>
+                          </div>
+                          <Switch 
+                            checked={localConfig.enable_calendar || false}
+                            onCheckedChange={(val) => setLocalConfig({ ...localConfig, enable_calendar: val })}
+                          />
+                        </div>
+
+                        {localConfig.enable_calendar && (
+                          <div className="space-y-4 border-t pt-4">
+                            <div className="flex items-center justify-between">
+                              <div className="space-y-0.5">
+                                <Label className="text-base">中国节假日信息</Label>
+                                <p className="text-xs text-muted-foreground">显示农历、节气，并标注法定节假日休/班</p>
+                              </div>
+                              <Switch 
+                                checked={localConfig.enable_holiday || false}
+                                onCheckedChange={(val) => setLocalConfig({ ...localConfig, enable_holiday: val })}
+                              />
+                            </div>
+                            {localConfig.enable_holiday && (
+                              <div className="space-y-2 pl-4 border-l-2 border-primary/20">
+                                <Label className="text-sm">节假日 API 数据源</Label>
+                                <Input 
+                                  className="font-mono text-[0.7rem] h-8"
+                                  placeholder="https://.../yyyy.json"
+                                  value={localConfig.holiday_api_url || ''} 
+                                  onChange={(e) => setLocalConfig({ ...localConfig, holiday_api_url: e.target.value })}
+                                />
+                                <p className="text-[0.65rem] text-muted-foreground italic">
+                                  使用 yyyy 作为年份占位符。默认从 GitHub 获取。
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between border-t pt-4">
+                          <div className="space-y-0.5">
                             <Label className="text-base">开机自启动</Label>
                             <p className="text-xs text-muted-foreground">在系统启动后自动运行应用</p>
                           </div>
