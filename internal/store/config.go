@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 )
 
@@ -28,37 +27,75 @@ type Config struct {
 }
 
 var (
-	baseDir string
-	mu      sync.RWMutex
+	baseDir    string
+	hasUserDir bool
+	mu         sync.RWMutex
 )
 
+func SetBaseDir(path string) {
+	mu.Lock()
+	defer mu.Unlock()
+	baseDir = path
+	hasUserDir = true
+}
+
 func Init() error {
-	exePath, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	realPath, err := filepath.EvalSymlinks(exePath)
-	if err != nil {
-		realPath = exePath
-	}
-	baseDir = filepath.Dir(realPath)
+	mu.Lock()
+	defer mu.Unlock()
 
-	// 在 macOS 上，如果运行在 .app 包内，或者当前目录不可写，则切换到用户配置目录
-	// 这是为了防止在只读目录（如 /Applications 或 DMG）下运行时闪退
-	isInsideApp := runtime.GOOS == "darwin" && strings.Contains(baseDir, ".app/Contents/MacOS")
+	return initLocked()
+}
 
-	writable := true
-	testFile := filepath.Join(baseDir, ".write_test")
-	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
-		writable = false
-	} else {
-		_ = os.Remove(testFile)
+func initLocked() error {
+	if !hasUserDir {
+		// 检查环境变量是否指定了路径
+		if envPath := os.Getenv("BING_PAPER_DATA_PATH"); envPath != "" {
+			baseDir = envPath
+			hasUserDir = true
+		}
 	}
 
-	if isInsideApp || !writable {
-		configDir, err := os.UserConfigDir()
-		if err == nil {
-			baseDir = filepath.Join(configDir, "BingPaperDesktop")
+	if !hasUserDir {
+		exePath, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		realPath, err := filepath.EvalSymlinks(exePath)
+		if err != nil {
+			realPath = exePath
+		}
+		exeDir := filepath.Dir(realPath)
+
+		// 默认策略
+		// Windows: 默认保存在可执行文件的相对路径
+		// macOS: 默认保存在用户配置目录 UserConfigDir
+		if runtime.GOOS == "darwin" {
+			configDir, err := os.UserConfigDir()
+			if err == nil {
+				baseDir = filepath.Join(configDir, "BingPaperDesktop")
+			} else {
+				baseDir = exeDir
+			}
+		} else {
+			// Windows 或其他系统，默认使用可执行文件目录
+			baseDir = exeDir
+
+			// 如果是 Windows，但目录不可写，则回退到 UserConfigDir
+			// 这是为了防止安装在 C:\Program Files 等受限目录时无法写入
+			writable := true
+			testFile := filepath.Join(baseDir, ".write_test")
+			if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+				writable = false
+			} else {
+				_ = os.Remove(testFile)
+			}
+
+			if !writable {
+				configDir, err := os.UserConfigDir()
+				if err == nil {
+					baseDir = filepath.Join(configDir, "BingPaperDesktop")
+				}
+			}
 		}
 	}
 
@@ -75,6 +112,12 @@ func Init() error {
 		}
 	}
 	return nil
+}
+
+func ReInit() error {
+	mu.Lock()
+	defer mu.Unlock()
+	return initLocked()
 }
 
 func GetBaseDir() string {

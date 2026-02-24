@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"flag"
 	"io"
 	"log"
 	"log/slog"
@@ -44,6 +45,14 @@ func initLogger() {
 }
 
 func main() {
+	// Parse command line flags
+	dataPath := flag.String("data-path", "", "Custom path for configuration and data files")
+	flag.Parse()
+
+	if *dataPath != "" {
+		store.SetBaseDir(*dataPath)
+	}
+
 	// Initialize store and portable paths
 	if err := store.Init(); err != nil {
 		log.Fatalf("Failed to initialize store: %v", err)

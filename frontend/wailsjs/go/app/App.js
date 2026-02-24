@@ -34,6 +34,10 @@ export function FetchToday(arg1, arg2, arg3) {
   return window['go']['app']['App']['FetchToday'](arg1, arg2, arg3);
 }
 
+export function GetBaseDir() {
+  return window['go']['app']['App']['GetBaseDir']();
+}
+
 export function GetConfig() {
   return window['go']['app']['App']['GetConfig']();
 }
@@ -88,6 +92,14 @@ export function ResetSettings() {
 
 export function SaveConfig(arg1) {
   return window['go']['app']['App']['SaveConfig'](arg1);
+}
+
+export function SelectDirectory() {
+  return window['go']['app']['App']['SelectDirectory']();
+}
+
+export function SetBaseDir(arg1) {
+  return window['go']['app']['App']['SetBaseDir'](arg1);
 }
 
 export function SetupTray(arg1, arg2) {

@@ -20,6 +20,8 @@ export function DeleteHistory(arg1:string):Promise<void>;
 
 export function FetchToday(arg1:number,arg2:number,arg3:number):Promise<app.CurrentResult>;
 
+export function GetBaseDir():Promise<string>;
+
 export function GetConfig():Promise<store.Config>;
 
 export function GetContext():Promise<context.Context>;
@@ -47,6 +49,10 @@ export function ResetApplication():Promise<void>;
 export function ResetSettings():Promise<void>;
 
 export function SaveConfig(arg1:store.Config):Promise<void>;
+
+export function SelectDirectory():Promise<string>;
+
+export function SetBaseDir(arg1:string):Promise<void>;
 
 export function SetupTray(arg1:Array<number>,arg2:Array<number>):Promise<any|any>;
 

@@ -92,6 +92,45 @@ func (a *App) Startup(ctx context.Context) {
 	}
 }
 
+func (a *App) GetBaseDir() string {
+	return store.GetBaseDir()
+}
+
+func (a *App) SelectDirectory() (string, error) {
+	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Select Data Directory",
+	})
+}
+
+func (a *App) SetBaseDir(path string) error {
+	if path == "" {
+		return fmt.Errorf("path cannot be empty")
+	}
+
+	// 1. 设置新路径
+	store.SetBaseDir(path)
+
+	// 2. 重新初始化 store (创建目录等)
+	if err := store.ReInit(); err != nil {
+		return err
+	}
+
+	// 3. 重新加载配置
+	cfg, err := store.LoadConfig()
+	if err != nil {
+		return err
+	}
+
+	// 4. 重启调度器 (因为数据保存路径变了，可能需要重新获取或清理)
+	a.sched.Stop()
+	a.sched.Update(cfg.ScheduleMode, cfg.DailyTime, cfg.IntervalMinutes)
+	a.sched.Start()
+
+	slog.Info("BaseDir changed", "newPath", path)
+
+	return nil
+}
+
 func (a *App) GetContext() context.Context {
 	return a.ctx
 }

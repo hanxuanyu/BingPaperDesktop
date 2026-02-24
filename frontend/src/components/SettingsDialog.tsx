@@ -20,7 +20,16 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { store, app } from '../../wailsjs/go/models';
-import { OpenDataDir, OpenLogsDir, Quit, GetVersionInfo, BrowserOpenURL } from '../../wailsjs/go/app/App';
+import { 
+  OpenDataDir, 
+  OpenLogsDir, 
+  Quit, 
+  GetVersionInfo, 
+  BrowserOpenURL,
+  GetBaseDir,
+  SelectDirectory,
+  SetBaseDir 
+} from '../../wailsjs/go/app/App';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -43,13 +52,28 @@ export function SettingsDialog({
 }: SettingsDialogProps) {
   const [localConfig, setLocalConfig] = useState<store.Config | null>(null);
   const [versionInfo, setVersionInfo] = useState<app.VersionInfo | null>(null);
+  const [currentBaseDir, setCurrentBaseDir] = useState<string>('');
 
   useEffect(() => {
     if (open && initialConfig) {
       setLocalConfig({ ...initialConfig });
       GetVersionInfo().then(setVersionInfo);
+      GetBaseDir().then(setCurrentBaseDir);
     }
   }, [open, initialConfig]);
+
+  const handleSelectBaseDir = async () => {
+    try {
+      const selected = await SelectDirectory();
+      if (selected && selected !== currentBaseDir) {
+        await SetBaseDir(selected);
+        setCurrentBaseDir(selected);
+        onReset();
+      }
+    } catch (err) {
+      console.error('Failed to select directory:', err);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -208,6 +232,21 @@ export function SettingsDialog({
                       <div className="flex gap-3 border-t pt-4">
                         <Button variant="secondary" className="flex-1 h-9 text-xs" onClick={() => OpenDataDir()}>打开数据目录</Button>
                         <Button variant="secondary" className="flex-1 h-9 text-xs" onClick={() => OpenLogsDir()}>查看日志目录</Button>
+                      </div>
+
+                      <div className="space-y-2 border-t pt-4">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm font-medium">基准保存路径 (baseDir)</Label>
+                          <Button variant="outline" size="sm" className="h-7 text-[0.7rem]" onClick={handleSelectBaseDir}>
+                            更改路径
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-2 bg-muted/30 p-2 rounded border text-[0.7rem] font-mono break-all">
+                          <span className="truncate flex-1">{currentBaseDir}</span>
+                        </div>
+                        <p className="text-[0.65rem] text-muted-foreground italic">
+                          更改此路径将切换配置文件和数据的保存位置，旧数据不会自动迁移。
+                        </p>
                       </div>
                     </div>
                   </section>
