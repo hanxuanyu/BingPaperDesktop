@@ -182,13 +182,26 @@ func LoadConfig() (Config, error) {
 		return Config{}, err
 	}
 
-	var cfg Config
+	cfg := DefaultConfig()
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return Config{}, err
 	}
 
 	// Migration for older versions
 	migrated := false
+
+	// Check if any expected fields are missing in the file
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err == nil {
+		newFields := []string{"log_retain_days", "log_max_size", "auto_start", "hide_dock_icon", "random_history"}
+		for _, f := range newFields {
+			if _, ok := raw[f]; !ok {
+				migrated = true
+				break
+			}
+		}
+	}
+
 	if cfg.BingApiUrl == "" {
 		if cfg.ApiType == "bing" && cfg.ApiMetaUrl != "" {
 			cfg.BingApiUrl = cfg.ApiMetaUrl
