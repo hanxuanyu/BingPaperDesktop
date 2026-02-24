@@ -520,71 +520,83 @@ func (a *App) ApplyHistory(key string, screenW, screenH int) error {
 	cfg, _ := store.LoadConfig()
 	absOriginalPath := filepath.Join(store.GetBaseDir(), target.ImagePath)
 
-	// 计算当前屏幕比例
-	targetRatio := 1.777777 // 默认 16:9
-	if screenW > 0 && screenH > 0 {
-		targetRatio = float64(screenW) / float64(screenH)
+	// 获取所有显示器
+	monitors, err := wallpaper.GetMonitors()
+	if err != nil || len(monitors) == 0 {
+		slog.Warn("Failed to get monitors, falling back to single monitor", "error", err)
+		monitors = []wallpaper.Monitor{{ID: 0, Width: screenW, Height: screenH}}
 	}
 
-	// 根据当前配置决定是否显示叠加层
-	showOverlay := cfg.OverlayMetadata || cfg.EnableCalendar
-	applyPath := absOriginalPath
-
-	if showOverlay {
-		var overlays []string
-
-		// 1. 水印 (针对图片固定)
-		if cfg.OverlayMetadata {
-			dayDir := filepath.Dir(target.ImagePath)
-			tempMeta := &bing.Meta{
-				Date:      target.Date,
-				Title:     target.Title,
-				Copyright: target.Copyright,
-			}
-			tempChosen := bing.Variant{
-				Variant: target.ChosenVariant,
-			}
-			wmPath := a.ensureWatermarkOverlay(tempMeta, tempChosen, dayDir, target.ImagePath, cfg, targetRatio)
-			if wmPath != "" {
-				overlays = append(overlays, filepath.Join(store.GetBaseDir(), wmPath))
-			}
+	// 为每个显示器独立合成并应用壁纸
+	for _, m := range monitors {
+		// 计算当前屏幕比例
+		targetRatio := 1.777777 // 默认 16:9
+		if m.Width > 0 && m.Height > 0 {
+			targetRatio = float64(m.Width) / float64(m.Height)
 		}
 
-		// 2. 日历 (针对当前日期)
-		if cfg.EnableCalendar {
-			// 获取原图尺寸
-			file, err := os.Open(absOriginalPath)
-			if err == nil {
-				imgCfg, _, err := image.DecodeConfig(file)
-				file.Close()
+		// 根据当前配置决定是否显示叠加层
+		showOverlay := cfg.OverlayMetadata || cfg.EnableCalendar
+		applyPath := absOriginalPath
+
+		if showOverlay {
+			var overlays []string
+
+			// 1. 水印 (针对图片固定)
+			if cfg.OverlayMetadata {
+				dayDir := filepath.Dir(target.ImagePath)
+				tempMeta := &bing.Meta{
+					Date:      target.Date,
+					Title:     target.Title,
+					Copyright: target.Copyright,
+				}
+				tempChosen := bing.Variant{
+					Variant: target.ChosenVariant,
+				}
+				wmPath := a.ensureWatermarkOverlay(tempMeta, tempChosen, dayDir, target.ImagePath, cfg, targetRatio)
+				if wmPath != "" {
+					overlays = append(overlays, filepath.Join(store.GetBaseDir(), wmPath))
+				}
+			}
+
+			// 2. 日历 (针对当前日期)
+			if cfg.EnableCalendar {
+				// 获取原图尺寸
+				file, err := os.Open(absOriginalPath)
 				if err == nil {
-					calPath := a.getCalendarOverlay(imgCfg.Width, imgCfg.Height, cfg, targetRatio)
-					if calPath != "" {
-						overlays = append(overlays, calPath)
+					imgCfg, _, err := image.DecodeConfig(file)
+					file.Close()
+					if err == nil {
+						calPath := a.getCalendarOverlay(imgCfg.Width, imgCfg.Height, cfg, targetRatio)
+						if calPath != "" {
+							overlays = append(overlays, calPath)
+						}
 					}
+				}
+			}
+
+			if len(overlays) > 0 {
+				// 合成针对该显示器的最终图片
+				tempWallpaperPath := filepath.Join(store.GetBaseDir(), fmt.Sprintf("current_wallpaper_%d.jpg", m.ID))
+				if err := overlay.Composite(absOriginalPath, overlays, tempWallpaperPath); err == nil {
+					applyPath = tempWallpaperPath
+				} else {
+					slog.Error("Failed to composite image", "error", err, "monitor", m.ID)
 				}
 			}
 		}
 
-		if len(overlays) > 0 {
-			// 合成最终图片
-			tempWallpaperPath := filepath.Join(store.GetBaseDir(), "current_wallpaper.jpg")
-			if err := overlay.Composite(absOriginalPath, overlays, tempWallpaperPath); err == nil {
-				applyPath = tempWallpaperPath
-			} else {
-				slog.Error("Failed to composite image", "error", err)
-			}
+		slog.Info("Applying wallpaper to monitor", "id", m.ID, "name", m.Name, "path", applyPath)
+		if err := wallpaper.SetOnMonitor(m.ID, applyPath); err != nil {
+			slog.Error("Failed to set wallpaper on monitor", "id", m.ID, "error", err)
+			// 如果设置特定显示器失败，尝试全局设置作为回退
+			_ = wallpaper.Set(applyPath)
 		}
 	}
 
 	// Update last fetch and notify frontend
 	a.lastFetch = &CurrentResult{Item: *target, Success: true}
 	runtime.EventsEmit(a.ctx, "current-image-changed", *target)
-
-	slog.Info("Applying wallpaper", "path", applyPath)
-	if err := wallpaper.Set(applyPath); err != nil {
-		return err
-	}
 
 	return nil
 }
