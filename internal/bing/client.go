@@ -52,9 +52,16 @@ type Variant struct {
 	Variant    string `json:"variant"` // "1920x1080" or "UHD"
 }
 
+// httpClient 复用单个 HTTP 客户端实例，避免每次请求都创建新连接
+var httpClient = &http.Client{Timeout: 15 * time.Second}
+
+// FetchMeta 根据 apiType 从指定 URL 拉取今日壁纸元数据，并统一转换为内部 Meta 结构体。
+// 支持两种格式：
+//   - "bing": 必应官方 HPImageArchive JSON（仅含单张 UHD 图片）
+//   - "custom"(默认): BingPaper 服务端自定义格式（含多分辨率变体列表）
 func FetchMeta(apiType, url string) (*Meta, error) {
-	slog.Debug("Fetching meta", "type", apiType, "url", url)
-	client := &http.Client{Timeout: 15 * time.Second}
+	slog.Info("Fetching meta", "type", apiType, "url", url)
+	client := httpClient
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -116,6 +123,11 @@ func FetchMeta(apiType, url string) (*Meta, error) {
 	return &meta, nil
 }
 
+// SelectVariant 从 meta.Variants 中为给定的物理屏幕尺寸选择最优图片变体。
+// 选择策略（优先级递减）：
+//  1. forceUHD=true 时直接返回 UHD 变体（若存在）
+//  2. 宽高比最接近屏幕的变体集合（允许 2% 误差）
+//  3. 在候选集合中，优先 UHD；其次选分辨率≥屏幕且最小的变体；最后选最大的变体
 func SelectVariant(meta *Meta, screenW, screenH int, forceUHD bool) Variant {
 	if forceUHD {
 		for _, v := range meta.Variants {
@@ -214,6 +226,8 @@ func parseResolution(res string) (int, int) {
 	return w, h
 }
 
+// DownloadImage 从 url 下载图片并保存到 destPath，使用临时文件（.part）保证下载原子性。
+// 内置最多 3 次指数退避重试（500ms / 1s / 2s）。
 func DownloadImage(url, destPath string) error {
 	slog.Info("Downloading image", "url", url, "dest", destPath)
 	tmpPath := destPath + ".part"

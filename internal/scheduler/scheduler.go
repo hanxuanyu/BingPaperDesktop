@@ -21,6 +21,8 @@ type Scheduler struct {
 	isExecuting bool
 }
 
+// New 创建一个新的调度器实例。task 是被周期性执行的函数。
+// 无论调度模式如何，都注册了系统唤醒回调，但仅在 mode=="wakeup" 时才执行。
 func New(task TaskFunc) *Scheduler {
 	s := &Scheduler{
 		task:     task,
@@ -32,7 +34,7 @@ func New(task TaskFunc) *Scheduler {
 		mode := s.mode
 		s.mu.Unlock()
 		if mode == "wakeup" {
-			slog.Info("Scheduler: wake event received, executing task")
+			slog.Info("Scheduler: system wake event received, executing task")
 			s.execute()
 		}
 	})

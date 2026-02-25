@@ -29,6 +29,9 @@ func SaveBase64Image(base64Data, destPath string) error {
 	return os.WriteFile(destPath, data, 0644)
 }
 
+// AddWatermark 是纯 Go 实现的水印叠加方案（后备/备用）。
+// 当前版本的主要水印渲染由前端 Canvas（watermark.ts）完成，此函数已不在主流程中调用。
+// 保留作为无前端环境（CLI 模式）下的回退方案。
 func AddWatermark(srcPath, destPath, title, date, copyright string) error {
 	file, err := os.Open(srcPath)
 	if err != nil {

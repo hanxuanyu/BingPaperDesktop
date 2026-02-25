@@ -80,11 +80,15 @@ type CurrentResult struct {
 
 func NewApp() *App {
 	a := &App{
-		wmChan: make(chan string),
+		// wmChan 容量为 1：避免前端 JS 回调在 Go select 就绪之前发送数据时被丢弃。
+		// 场景：Go 通过 EventsEmit 触发前端渲染，前端完成后调用 SubmitWatermark。
+		// 若 JS 微任务先于 Go goroutine 的 select 就绪，无缓冲 channel 会使数据无声丢失。
+		wmChan: make(chan string, 1),
 	}
 	a.sched = scheduler.New(func() error {
-		// 自动获取并应用始终针对所有显示器
-		return a.ApplyHistoryToMonitor("", -1, 1920, 1080)
+		// 调度器触发时不依赖前端传入的分辨率，直接使用 0 触发 FetchToday 默认分辨率逻辑。
+		// FetchToday(0,0,1) 内部会回退到 1920×1080，实际壁纸应用时由 GetMonitors() 读取真实显示器信息。
+		return a.ApplyHistoryToMonitor("", -1, 0, 0)
 	})
 	return a
 }
@@ -92,10 +96,12 @@ func NewApp() *App {
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 	cfg, _ := store.LoadConfig()
+
+	// 按当前配置初始化调度器
 	a.sched.Update(cfg.ScheduleMode, cfg.DailyTime, cfg.IntervalMinutes)
 	a.sched.Start()
 
-	slog.Info("App startup", "os", filepath.Base(os.Args[0]))
+	slog.Info("App startup", "executable", filepath.Base(os.Args[0]))
 
 	// 检查节假日数据
 	if cfg.EnableHoliday {
@@ -243,7 +249,13 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 	realW := int(float64(screenW) * dpr)
 	realH := int(float64(screenH) * dpr)
 
-	slog.Info("FetchToday started", "screen", fmt.Sprintf("%dx%d", realW, realH), "api", cfg.ApiType)
+	slog.Info("FetchToday started",
+		"logicalScreen", fmt.Sprintf("%dx%d", screenW, screenH),
+		"physicalScreen", fmt.Sprintf("%dx%d", realW, realH),
+		"dpr", dpr,
+		"api", cfg.ApiType,
+		"forceUHD", cfg.ForceUHD,
+	)
 
 	// 2. 获取元数据并选择合适的图片变体
 	apiUrl := cfg.BingApiUrl
@@ -395,7 +407,9 @@ func (a *App) ListHistory() ([]store.HistoryItem, error) {
 	return idx.Items, nil
 }
 
-// ensureWatermarkOverlay 确保特定比例的水印叠加层存在 (PNG 格式)
+// ensureWatermarkOverlay 确保特定比例（16:9 或 4:3）的元数据水印叠加图（PNG）已生成并保存。
+// 若文件已存在则直接返回路径（缓存命中），否则通过 Wails 事件触发前端 Canvas 渲染后等待结果。
+// 使用 wmMu 互斥锁保证同一时刻只有一个叠加渲染请求在进行，避免 wmChan 竞争。
 func (a *App) ensureWatermarkOverlay(meta *bing.Meta, chosen bing.Variant, dayDir, relImagePath string, cfg store.Config, targetRatio float64) string {
 	a.wmMu.Lock()
 	defer a.wmMu.Unlock()
@@ -437,20 +451,24 @@ func (a *App) ensureWatermarkOverlay(meta *bing.Meta, chosen bing.Variant, dayDi
 	select {
 	case base64Data := <-a.wmChan:
 		if base64Data == "" {
+			slog.Warn("ensureWatermarkOverlay: received empty data from frontend")
 			return ""
 		}
 		if err := overlay.SaveBase64Image(base64Data, absPath); err != nil {
 			slog.Error("Failed to save watermark overlay", "path", absPath, "error", err)
 			return ""
 		}
+		slog.Info("Watermark overlay saved", "path", relPath)
 		return relPath
 	case <-time.After(10 * time.Second):
-		slog.Error("Watermark processing timeout")
+		slog.Error("Watermark overlay processing timeout — frontend did not respond in time",
+			"image", relImagePath, "ratio", targetRatio)
 		return ""
 	}
 }
 
-// getCalendarOverlay 获取当日的特定比例日历叠加层，按日期和分辨率缓存
+// getCalendarOverlay 获取当日的特定比例日历叠加层，按日期和分辨率缓存。
+// 日历叠加层以日期+分辨率+是否含节假日为 key 缓存，每日首次申请时触发前端渲染。
 func (a *App) getCalendarOverlay(width, height int, cfg store.Config, targetRatio float64) string {
 	a.wmMu.Lock()
 	defer a.wmMu.Unlock()
@@ -504,15 +522,18 @@ func (a *App) getCalendarOverlay(width, height int, cfg store.Config, targetRati
 	select {
 	case base64Data := <-a.wmChan:
 		if base64Data == "" {
+			slog.Warn("getCalendarOverlay: received empty data from frontend")
 			return ""
 		}
 		if err := overlay.SaveBase64Image(base64Data, absPath); err != nil {
 			slog.Error("Failed to save calendar overlay", "path", absPath, "error", err)
 			return ""
 		}
+		slog.Info("Calendar overlay saved", "path", relPath)
 		return absPath
 	case <-time.After(10 * time.Second):
-		slog.Error("Calendar processing timeout")
+		slog.Error("Calendar overlay processing timeout — frontend did not respond in time",
+			"date", today, "size", fmt.Sprintf("%dx%d", width, height))
 		return ""
 	}
 }
@@ -527,7 +548,8 @@ func (a *App) ApplyHistory(key string, screenW, screenH int) error {
 
 func (a *App) ApplyHistoryToMonitor(key string, monitorID int, screenW, screenH int) error {
 	if key == "" {
-		// 如果 key 为空，表示获取最新的
+		// key 为空时先获取今日壁纸（由调度器或托盘的「立即刷新」触发）。
+		// 此时 screenW/H 为 0 代表使用默认，FetchToday 内部会回退到 1920×1080 并由 GetMonitors() 覆盖。
 		res, err := a.FetchToday(screenW, screenH, 1.0)
 		if err != nil {
 			return err
@@ -891,11 +913,14 @@ func (a *App) AssetsHandler() http.Handler {
 	})
 }
 
+// SubmitWatermark 接收前端 Canvas 渲染完成的 Base64 图片数据，并将其投递到水印处理 channel。
+// wmChan 容量为 1，此处使用非阻塞发送：若 channel 已满说明上一次渲染结果尚未被消费，直接丢弃并警告。
+// 正常情况下 ensureWatermarkOverlay/getCalendarOverlay 会在 EventsEmit 后立即进入 select 等待，channel 不应积压。
 func (a *App) SubmitWatermark(base64Data string) {
-	// 避免在没有接收者时阻塞
 	select {
 	case a.wmChan <- base64Data:
+		slog.Debug("SubmitWatermark: data delivered", "size", len(base64Data))
 	default:
-		slog.Warn("SubmitWatermark: no receiver for channel")
+		slog.Warn("SubmitWatermark: channel full, receiver may not be ready — dropping data")
 	}
 }

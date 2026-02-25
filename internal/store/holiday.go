@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type HolidayDay struct {
@@ -44,9 +45,11 @@ func CheckAndDownloadHoliday(year int, force bool) error {
 	}
 	url := strings.ReplaceAll(cfg.HolidayApiUrl, "yyyy", fmt.Sprintf("%d", year))
 
-	resp, err := http.Get(url)
+	// 使用带超时的 HTTP 客户端，防止网络异常时永久阻塞
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(url)
 	if err != nil {
-		return err
+		return fmt.Errorf("holiday download request failed: %w", err)
 	}
 	defer resp.Body.Close()
 

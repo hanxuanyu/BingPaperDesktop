@@ -107,7 +107,8 @@ func AddToHistory(item HistoryItem) error {
 	return SaveIndex(idx)
 }
 
-// DeleteFromHistory 根据 Key 删除单条历史记录及其关联的文件。
+// DeleteFromHistory 根据 Key 删除单条历史记录及其关联的文件（整个日期子目录和缩略图目录）。
+// 若 key 不存在则静默返回 nil（幂等）。
 func DeleteFromHistory(key string) error {
 	idx, err := LoadIndex()
 	if err != nil {

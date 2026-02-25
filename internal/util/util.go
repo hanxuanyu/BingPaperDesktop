@@ -10,6 +10,8 @@ import (
 	"golang.org/x/image/draw"
 )
 
+// Retry 以指数退避策略重试函数 f，最多 attempts 次。
+// 首次失败后等待 sleep，之后每次等待时间翻倍。
 func Retry(attempts int, sleep time.Duration, f func() error) error {
 	var err error
 	for i := 0; i < attempts; i++ {
@@ -24,6 +26,8 @@ func Retry(attempts int, sleep time.Duration, f func() error) error {
 	return fmt.Errorf("after %d attempts, last error: %s", attempts, err)
 }
 
+// NormalizeDate 将日期字符串统一为 YYYY-MM-DD 格式。
+// 支持输入：YYYY-MM-DD（直接返回）或 YYYYMMDD（补充横线）。
 func NormalizeDate(d string) string {
 	// If it's already YYYY-MM-DD, return as is
 	if len(d) == 10 && d[4] == '-' && d[7] == '-' {

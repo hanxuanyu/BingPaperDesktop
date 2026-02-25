@@ -14,6 +14,7 @@ import (
 	"BingPaperDesktop/internal/app"
 	"BingPaperDesktop/internal/store"
 	"BingPaperDesktop/internal/util"
+
 	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/energye/systray"
@@ -133,11 +134,14 @@ func main() {
 			}
 		},
 		OnBeforeClose: func(ctx context.Context) bool {
-			wruntime.EventsEmit(ctx, "prepare-show-window") // 借用这个事件来清除 toast，虽然是关闭
+			// 发送 prepare-show-window 事件以让前端清除所有悬浮通知（toast），
+			// 避免窗口隐藏后通知遗留在界面中（下次展示时出现堆积）。
+			wruntime.EventsEmit(ctx, "prepare-show-window")
 			if runtime.GOOS == "darwin" {
 				util.HideDockIcon()
 			}
-			return false // 返回 false 以允许隐藏窗口（配合 HideWindowOnClose: true）
+			// 返回 false 配合 HideWindowOnClose: true，使「关闭」按钮只隐藏窗口而非退出程序
+			return false
 		},
 	})
 

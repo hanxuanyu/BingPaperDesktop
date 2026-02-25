@@ -90,11 +90,10 @@ function App() {
     setLoading(true);
     if (!silent) isManualFetching.current = true;
     try {
-      const w = window.screen.width * window.devicePixelRatio;
-      const h = window.screen.height * window.devicePixelRatio;
-      const dpr = window.devicePixelRatio;
-
-      const result = await FetchToday(Math.round(w), Math.round(h), dpr);
+      // 注意：window.screen.width/height 返回的是 CSS 逻辑像素
+      // Go 端的 FetchToday 会自行将逻辑像素乘以 dpr 得到物理像素
+      // 因此这里不能提前乘以 dpr，否则会导致分辨率被双倍放大（DPR² 问题）
+      const result = await FetchToday(window.screen.width, window.screen.height, window.devicePixelRatio);
       if (result.success) {
         setCurrentImage(store.HistoryItem.createFrom(result.item));
         loadHistory();
