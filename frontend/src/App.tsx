@@ -23,7 +23,8 @@ import {
   SubmitWatermark,
   ResetApplication,
   ResetSettings,
-  GetCurrentItem
+  GetCurrentItem,
+  GetMonitorWallpapers
 } from '../wailsjs/go/app/App';
 import { store } from '../wailsjs/go/models';
 import { renderWatermark } from './lib/watermark';
@@ -33,6 +34,7 @@ import { HistoryDrawer } from './components/HistoryDrawer';
 import { SettingsDialog } from './components/SettingsDialog';
 import { WallpaperInfo } from './components/WallpaperInfo';
 import { ResetDialog } from './components/ResetDialog';
+import { MonitorSwitcher } from './components/MonitorSwitcher';
 
 function App() {
   const [config, setConfig] = useState<store.Config | null>(null);
@@ -395,6 +397,12 @@ function App() {
           monitors={monitors}
           onRefresh={() => fetchToday()}
           onApply={handleApplyWallpaper}
+        />
+
+        {/* Floating Monitor Switcher */}
+        <MonitorSwitcher 
+          currentImage={currentImage}
+          onSelect={(item) => setCurrentImage(store.HistoryItem.createFrom(item))}
         />
 
         {/* Linux Support Notice */}

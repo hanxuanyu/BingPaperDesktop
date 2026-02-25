@@ -70,6 +70,10 @@ export function GetImageURL(arg1) {
   return window['go']['app']['App']['GetImageURL'](arg1);
 }
 
+export function GetMonitorWallpapers() {
+  return window['go']['app']['App']['GetMonitorWallpapers']();
+}
+
 export function GetMonitors() {
   return window['go']['app']['App']['GetMonitors']();
 }

@@ -40,6 +40,8 @@ export function GetImageDataURL(arg1:string):Promise<string>;
 
 export function GetImageURL(arg1:string):Promise<string>;
 
+export function GetMonitorWallpapers():Promise<Array<app.MonitorWallpaperInfo>>;
+
 export function GetMonitors():Promise<Array<wallpaper.Monitor>>;
 
 export function GetThumbnailURL(arg1:string):Promise<string>;

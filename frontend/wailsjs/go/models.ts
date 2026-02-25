@@ -34,6 +34,42 @@ export namespace app {
 		    return a;
 		}
 	}
+	export class MonitorWallpaperInfo {
+	    monitor_id: number;
+	    monitor_name: string;
+	    history_item: store.HistoryItem;
+	    thumbnail_url: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MonitorWallpaperInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.monitor_id = source["monitor_id"];
+	        this.monitor_name = source["monitor_name"];
+	        this.history_item = this.convertValues(source["history_item"], store.HistoryItem);
+	        this.thumbnail_url = source["thumbnail_url"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class VersionInfo {
 	    version: string;
 	    commit_hash: string;

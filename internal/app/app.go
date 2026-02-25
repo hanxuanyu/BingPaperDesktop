@@ -48,13 +48,14 @@ func (a *App) GetVersionInfo() VersionInfo {
 }
 
 type App struct {
-	ctx       context.Context
-	sched     *scheduler.Scheduler
-	fetchMu   sync.Mutex
-	mu        sync.RWMutex // 保护 lastFetch 和其他共享状态
-	lastFetch *CurrentResult
-	wmChan    chan string
-	wmMu      sync.Mutex
+	ctx               context.Context
+	sched             *scheduler.Scheduler
+	fetchMu           sync.Mutex
+	mu                sync.RWMutex // 保护 lastFetch 和其他共享状态
+	lastFetch         *CurrentResult
+	wmChan            chan string
+	wmMu              sync.Mutex
+	monitorWallpapers map[int]string
 }
 
 type OverlayRequest struct {
@@ -83,7 +84,8 @@ func NewApp() *App {
 		// wmChan 容量为 1：避免前端 JS 回调在 Go select 就绪之前发送数据时被丢弃。
 		// 场景：Go 通过 EventsEmit 触发前端渲染，前端完成后调用 SubmitWatermark。
 		// 若 JS 微任务先于 Go goroutine 的 select 就绪，无缓冲 channel 会使数据无声丢失。
-		wmChan: make(chan string, 1),
+		wmChan:            make(chan string, 1),
+		monitorWallpapers: make(map[int]string),
 	}
 	a.sched = scheduler.New(func() error {
 		// 调度器触发时不依赖前端传入的分辨率，直接使用 0 触发 FetchToday 默认分辨率逻辑。
@@ -542,6 +544,55 @@ func (a *App) GetMonitors() ([]wallpaper.Monitor, error) {
 	return wallpaper.GetMonitors()
 }
 
+type MonitorWallpaperInfo struct {
+	MonitorID    int               `json:"monitor_id"`
+	MonitorName  string            `json:"monitor_name"`
+	HistoryItem  store.HistoryItem `json:"history_item"`
+	ThumbnailURL string            `json:"thumbnail_url"`
+}
+
+func (a *App) GetMonitorWallpapers() ([]MonitorWallpaperInfo, error) {
+	monitors, err := wallpaper.GetMonitors()
+	if err != nil {
+		return nil, err
+	}
+
+	idx, _ := store.LoadIndex()
+	historyMap := make(map[string]store.HistoryItem)
+	for _, item := range idx.Items {
+		historyMap[item.Key] = item
+	}
+
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	var result []MonitorWallpaperInfo
+	for _, m := range monitors {
+		info := MonitorWallpaperInfo{
+			MonitorID:   m.ID,
+			MonitorName: m.Name,
+		}
+		if key, ok := a.monitorWallpapers[m.ID]; ok {
+			if item, exists := historyMap[key]; exists {
+				info.HistoryItem = item
+				thumb, _ := a.GetThumbnailURL(item.ImagePath)
+				info.ThumbnailURL = thumb
+			}
+		}
+
+		// 如果没有记录，或者记录的壁纸找不到了，尝试使用最后一次全局设置的壁纸
+		if info.HistoryItem.Key == "" && a.lastFetch != nil {
+			info.HistoryItem = a.lastFetch.Item
+			thumb, _ := a.GetThumbnailURL(info.HistoryItem.ImagePath)
+			info.ThumbnailURL = thumb
+		}
+
+		result = append(result, info)
+	}
+
+	return result, nil
+}
+
 func (a *App) ApplyHistory(key string, screenW, screenH int) error {
 	return a.ApplyHistoryToMonitor(key, -1, screenW, screenH)
 }
@@ -600,6 +651,7 @@ func (a *App) ApplyHistoryToMonitor(key string, monitorID int, screenW, screenH 
 	}
 
 	// 为每个目标显示器独立合成并应用壁纸
+	a.mu.Lock()
 	for _, m := range targets {
 		applyPath, err := a.prepareWallpaperForMonitor(target, m, cfg)
 		if err != nil {
@@ -613,19 +665,21 @@ func (a *App) ApplyHistoryToMonitor(key string, monitorID int, screenW, screenH 
 				slog.Warn("Multi-monitor wallpaper not supported by system, falling back to global setting")
 				_ = wallpaper.Set(applyPath)
 				// 更新状态并跳出显示器循环 (因为它是一个全局设置)
+				a.monitorWallpapers[m.ID] = target.Key
 				break
 			}
 			slog.Error("Failed to set wallpaper on monitor", "id", m.ID, "error", err)
 			// 如果设置特定显示器失败，尝试全局设置作为回退
 			_ = wallpaper.Set(applyPath)
 		}
+		a.monitorWallpapers[m.ID] = target.Key
 	}
 
 	// Update last fetch and notify frontend
-	a.mu.Lock()
 	a.lastFetch = &CurrentResult{Item: *target, Success: true}
 	a.mu.Unlock()
 	runtime.EventsEmit(a.ctx, "current-image-changed", *target)
+	runtime.EventsEmit(a.ctx, "monitor-wallpapers-changed", a.monitorWallpapers)
 
 	return nil
 }
