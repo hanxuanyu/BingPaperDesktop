@@ -58,6 +58,10 @@ export function GetContext() {
   return window['go']['app']['App']['GetContext']();
 }
 
+export function GetCurrentItem() {
+  return window['go']['app']['App']['GetCurrentItem']();
+}
+
 export function GetImageDataURL(arg1) {
   return window['go']['app']['App']['GetImageDataURL'](arg1);
 }

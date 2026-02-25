@@ -34,6 +34,8 @@ export function GetConfig():Promise<store.Config>;
 
 export function GetContext():Promise<context.Context>;
 
+export function GetCurrentItem():Promise<app.CurrentResult>;
+
 export function GetImageDataURL(arg1:string):Promise<string>;
 
 export function GetImageURL(arg1:string):Promise<string>;

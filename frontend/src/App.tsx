@@ -22,7 +22,8 @@ import {
   GetWallpaperSupport,
   SubmitWatermark,
   ResetApplication,
-  ResetSettings
+  ResetSettings,
+  GetCurrentItem
 } from '../wailsjs/go/app/App';
 import { store } from '../wailsjs/go/models';
 import { renderWatermark } from './lib/watermark';
@@ -95,7 +96,7 @@ function App() {
 
       const result = await FetchToday(Math.round(w), Math.round(h), dpr);
       if (result.success) {
-        setCurrentImage(result.item);
+        setCurrentImage(store.HistoryItem.createFrom(result.item));
         loadHistory();
         if (!silent) {
           const prefix = config?.random_history ? '当前为随机壁纸: ' : '已获取今日壁纸: ';
@@ -132,7 +133,7 @@ function App() {
           if (!prev || prev.key !== item.key) {
             loadHistory();
           }
-          return item;
+          return store.HistoryItem.createFrom(item);
         });
       }
     });
@@ -145,6 +146,12 @@ function App() {
 
     const unregisterShow = EventsOn('prepare-show-window', () => {
       toast.dismiss();
+      // 在显示窗口前主动拉取最新状态，确保主界面和桌面一致
+      GetCurrentItem().then(result => {
+        if (result && result.success && result.item) {
+          setCurrentImage(store.HistoryItem.createFrom(result.item));
+        }
+      }).catch(console.error);
     });
 
     // Watermark/Overlay rendering listener
@@ -249,7 +256,7 @@ function App() {
       const w = Math.round(window.screen.width * window.devicePixelRatio);
       const h = Math.round(window.screen.height * window.devicePixelRatio);
       await ApplyHistoryToMonitor(item.key, monitorId, w, h);
-      setCurrentImage(item);
+      setCurrentImage(store.HistoryItem.createFrom(item));
       toast.success(monitorId === -1 ? '已切换并设为壁纸' : `已切换并设为屏幕 ${monitorId + 1} 壁纸`);
     } catch (err) {
       toast.error('设置壁纸失败: ' + err);

@@ -51,6 +51,7 @@ type App struct {
 	ctx       context.Context
 	sched     *scheduler.Scheduler
 	fetchMu   sync.Mutex
+	mu        sync.RWMutex // 保护 lastFetch 和其他共享状态
 	lastFetch *CurrentResult
 	wmChan    chan string
 	wmMu      sync.Mutex
@@ -216,6 +217,16 @@ func (a *App) IsAutoStartEnabled() (bool, error) {
 	return util.IsAutoStartEnabled()
 }
 
+// GetCurrentItem 获取当前应用的壁纸信息，通常由前端主动拉取以进行同步。
+func (a *App) GetCurrentItem() (CurrentResult, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.lastFetch == nil {
+		return CurrentResult{Success: false, Error: "no item fetched yet"}, nil
+	}
+	return *a.lastFetch, nil
+}
+
 // FetchToday 获取今日壁纸并根据配置决定是否应用。
 // 它是程序的核心业务逻辑，由调度器或手动触发。
 func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, error) {
@@ -287,7 +298,7 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 		a.ensureWatermarkOverlay(meta, chosen, dayDir, relImagePath, cfg, 4.0/3.0)
 	}
 
-	// 6. 保存到历史记录
+	// 6. 准备当前项
 	item := store.HistoryItem{
 		Key:           key,
 		Date:          meta.Date,
@@ -302,23 +313,33 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 		slog.Error("Failed to save history", "key", key, "error", err)
 	}
 
-	res := CurrentResult{Item: item, Success: true}
-	a.lastFetch = &res
-
 	// 7. 根据配置自动应用壁纸
 	if cfg.AutoApply {
 		if cfg.RandomHistory {
 			slog.Info("Random history enabled, picking a random wallpaper from history")
-			return *a.lastFetch, a.ApplyRandomHistory(realW, realH)
+			err := a.ApplyRandomHistory(realW, realH)
+			if err == nil {
+				// 成功应用了随机，a.lastFetch 已经在 ApplyHistoryToMonitor 中被更新为随机项
+				a.mu.RLock()
+				defer a.mu.RUnlock()
+				return *a.lastFetch, nil
+			}
+			slog.Error("Apply random history failed, fallback to today", "error", err)
 		}
 
 		slog.Info("Auto applying wallpaper")
-		a.ApplyHistoryToMonitor(item.Key, -1, realW, realH)
+		_ = a.ApplyHistoryToMonitor(item.Key, -1, realW, realH)
 	} else {
-		// 通知前端图片已更新，但未自动应用
+		// 未自动应用，更新 lastFetch 并通知前端图片已更新
+		res := CurrentResult{Item: item, Success: true}
+		a.mu.Lock()
+		a.lastFetch = &res
+		a.mu.Unlock()
 		runtime.EventsEmit(a.ctx, "current-image-changed", item)
 	}
 
+	a.mu.RLock()
+	defer a.mu.RUnlock()
 	return *a.lastFetch, nil
 }
 
@@ -569,9 +590,8 @@ func (a *App) ApplyHistoryToMonitor(key string, monitorID int, screenW, screenH 
 			if strings.Contains(err.Error(), "IDesktopWallpaper not supported") {
 				slog.Warn("Multi-monitor wallpaper not supported by system, falling back to global setting")
 				_ = wallpaper.Set(applyPath)
-				// If not supported, we can break or just continue to let fallback happen for others
-				// but since it's a system-wide thing, we probably only need to set it once.
-				return nil
+				// 更新状态并跳出显示器循环 (因为它是一个全局设置)
+				break
 			}
 			slog.Error("Failed to set wallpaper on monitor", "id", m.ID, "error", err)
 			// 如果设置特定显示器失败，尝试全局设置作为回退
@@ -580,7 +600,9 @@ func (a *App) ApplyHistoryToMonitor(key string, monitorID int, screenW, screenH 
 	}
 
 	// Update last fetch and notify frontend
+	a.mu.Lock()
 	a.lastFetch = &CurrentResult{Item: *target, Success: true}
+	a.mu.Unlock()
 	runtime.EventsEmit(a.ctx, "current-image-changed", *target)
 
 	return nil
@@ -770,7 +792,9 @@ func (a *App) ResetApplication() error {
 	a.sched.Start()
 
 	// 6. 清理内存状态
+	a.mu.Lock()
 	a.lastFetch = nil
+	a.mu.Unlock()
 
 	slog.Info("!!! AUTOMATIC RESET COMPLETED !!!")
 	return nil
