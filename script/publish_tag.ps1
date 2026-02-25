@@ -1,6 +1,10 @@
 # BingPaperDesktop Tag Publication Script for Windows (PowerShell)
 # This script automates the process of creating and pushing a new tag to trigger the release workflow.
 
+param (
+    [string]$TagName
+)
+
 $ErrorActionPreference = "Stop"
 
 # Change to the project root directory
@@ -28,10 +32,6 @@ if ($Local -ne $Remote) {
 }
 
 # 4. Get tag name from user
-param (
-    [string]$TagName
-)
-
 if (-not $TagName) {
     $TagName = Read-Host "Enter tag name (e.g., v1.0.0)"
 }
