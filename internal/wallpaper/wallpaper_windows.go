@@ -90,18 +90,26 @@ func setOnMonitor(monitorID int, path string) error {
 	hr := ole.CoInitializeEx(0, ole.COINIT_APARTMENTTHREADED)
 	if hr != nil {
 		code := hr.(*ole.OleError).Code()
-		if code != 0 && code != 1 && uint32(code) != 0x80010106 {
+		if uint32(code) == 0x80010106 { // RPC_E_CHANGED_MODE
+			// Mode already set to something else, we can't change it but we can try to continue
+		} else if code != 0 && code != 1 { // S_OK = 0, S_FALSE = 1
 			return fmt.Errorf("CoInitializeEx failed: %v", hr)
+		} else {
+			// S_FALSE (1) means COM was already initialized on this thread,
+			// we still need to balance it with CoUninitialize if we want to be strict,
+			// but go-ole's CoInitializeEx return nil for S_OK.
+			// Let's check how go-ole handles it.
+			defer ole.CoUninitialize()
 		}
 	} else {
 		defer ole.CoUninitialize()
 	}
 
-	clsid, err := ole.CLSIDFromString("{C2CF27E3-0791-419B-A244-243CA06BB57D}")
+	clsid, err := ole.CLSIDFromString("{C2CF3110-460E-4FC1-B9D0-8A1C0C9CC4BD}")
 	if err != nil {
 		return err
 	}
-	iid, err := ole.IIDFromString("{BAD9BB81-5140-4614-B1A7-B233D1E646AF}")
+	iid, err := ole.IIDFromString("{B92B56A9-8B55-4E14-9A89-0199BBB6F93B}")
 	if err != nil {
 		return err
 	}
@@ -125,7 +133,7 @@ func setOnMonitor(monitorID int, path string) error {
 	// We can get it by index
 	var monitorCount uint32
 	retCode, _, _ := syscall.SyscallN(wallpaper.VTable.GetMonitorDevicePathCount, uintptr(unsafe.Pointer(wallpaper)), uintptr(unsafe.Pointer(&monitorCount)))
-	if retCode != 0 {
+	if int32(retCode) < 0 {
 		return fmt.Errorf("GetMonitorDevicePathCount failed: %08x", retCode)
 	}
 
@@ -135,14 +143,14 @@ func setOnMonitor(monitorID int, path string) error {
 
 	var monitorIDStr *uint16
 	retCode, _, _ = syscall.SyscallN(wallpaper.VTable.GetMonitorDevicePathAt, uintptr(unsafe.Pointer(wallpaper)), uintptr(monitorID), uintptr(unsafe.Pointer(&monitorIDStr)))
-	if retCode != 0 {
+	if int32(retCode) < 0 {
 		return fmt.Errorf("GetMonitorDevicePathAt failed: %08x", retCode)
 	}
 	defer ole.CoTaskMemFree(uintptr(unsafe.Pointer(monitorIDStr)))
 
 	pathPtr, _ := syscall.UTF16PtrFromString(absPath)
 	retCode, _, _ = syscall.SyscallN(wallpaper.VTable.SetWallpaper, uintptr(unsafe.Pointer(wallpaper)), uintptr(unsafe.Pointer(monitorIDStr)), uintptr(unsafe.Pointer(pathPtr)))
-	if retCode != 0 {
+	if int32(retCode) < 0 {
 		return fmt.Errorf("SetWallpaper failed: %08x", retCode)
 	}
 
