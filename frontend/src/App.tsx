@@ -206,6 +206,7 @@ function App() {
       const w = Math.round(window.screen.width * window.devicePixelRatio);
       const h = Math.round(window.screen.height * window.devicePixelRatio);
       await ApplyHistoryToMonitor(currentImage.key, monitorId, w, h);
+      setCurrentImage(store.HistoryItem.createFrom(currentImage)); // Trigger refresh
       toast.success(monitorId === -1 ? '所有屏幕壁纸设置成功' : `屏幕 ${monitorId + 1} 壁纸设置成功`);
     } catch (err) {
       toast.error('设置壁纸失败: ' + err);
@@ -248,6 +249,7 @@ function App() {
       const w = Math.round(window.screen.width * window.devicePixelRatio);
       const h = Math.round(window.screen.height * window.devicePixelRatio);
       await ApplyHistoryToMonitor(item.key, monitorId, w, h);
+      setCurrentImage(item);
       toast.success(monitorId === -1 ? '已切换并设为壁纸' : `已切换并设为屏幕 ${monitorId + 1} 壁纸`);
     } catch (err) {
       toast.error('设置壁纸失败: ' + err);
