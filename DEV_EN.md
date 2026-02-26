@@ -274,7 +274,7 @@ Configure the following secrets in **GitHub repository  Settings  Secrets and va
 
 | Secret | Default |
 |--------|---------|
-| `APPLE_BUNDLE_ID` | `com.wails.BingPaperDesktop` |
+| `APPLE_BUNDLE_ID` | `com.hxuanyu.BingPaperDesktop` |
 
 #### Optional  Windows Code Signing
 
