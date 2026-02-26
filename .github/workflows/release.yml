@@ -97,14 +97,14 @@ jobs:
           echo "Signing Package"
           # 使用 sed 替换配置文件中的占位符
           # 为 gon-sign-app.json 替换所有必要信息
-          sed -i '' "s/APPLE_BUNDLE_ID/${{ secrets.APPLE_BUNDLE_ID || 'com.wails.BingPaperDesktop' }}/g" ./build/darwin/gon-sign-app.json
+          sed -i '' "s/APPLE_BUNDLE_ID/${{ secrets.APPLE_BUNDLE_ID || 'com.hxuanyu.BingPaperDesktop' }}/g" ./build/darwin/gon-sign-app.json
           sed -i '' "s/APPLE_IDENTITY/${{ secrets.APPLE_IDENTITY }}/g" ./build/darwin/gon-sign-app.json
           sed -i '' "s/APPLE_ID_USER/${{ secrets.APPLE_ID_USER }}/g" ./build/darwin/gon-sign-app.json
           sed -i '' "s/APPLE_PASSWORD/${{ secrets.APPLE_PASSWORD }}/g" ./build/darwin/gon-sign-app.json
           sed -i '' "s/APPLE_PROVIDER/${{ secrets.APPLE_PROVIDER }}/g" ./build/darwin/gon-sign-app.json
           
           # 为 gon-notarize.json 替换所有必要信息
-          sed -i '' "s/APPLE_BUNDLE_ID/${{ secrets.APPLE_BUNDLE_ID || 'com.wails.BingPaperDesktop' }}/g" ./build/darwin/gon-notarize.json
+          sed -i '' "s/APPLE_BUNDLE_ID/${{ secrets.APPLE_BUNDLE_ID || 'com.hxuanyu.BingPaperDesktop' }}/g" ./build/darwin/gon-notarize.json
           sed -i '' "s/APPLE_ID_USER/${{ secrets.APPLE_ID_USER }}/g" ./build/darwin/gon-notarize.json
           sed -i '' "s/APPLE_PASSWORD/${{ secrets.APPLE_PASSWORD }}/g" ./build/darwin/gon-notarize.json
           sed -i '' "s/APPLE_PROVIDER/${{ secrets.APPLE_PROVIDER }}/g" ./build/darwin/gon-notarize.json
@@ -164,6 +164,18 @@ jobs:
       #     }
       #     & \$signtool sign /fd sha256 /tr http://ts.ssl.com /f certificate\certificate.pfx /p '${{ secrets.WIN_SIGNING_CERT_PASSWORD }}' .\build\bin\BingPaperDesktop.exe
 
+      - name: Generate SHA256 checksums
+        shell: bash
+        run: |
+          cd build/bin
+          for file in *; do
+            if [[ -f "$file" && "$file" != *.sha256 ]]; then
+              if [[ "$file" == *.exe || "$file" == *.zip || "$file" == *.dmg ]]; then
+                sha256sum "$file" > "$file.sha256"
+              fi
+            fi
+          done
+
       - name: upload artifacts macOS
         if: matrix.platform == 'macos-latest'
         uses: actions/upload-artifact@v4
@@ -172,13 +184,16 @@ jobs:
           path: |
             build/bin/*.zip
             build/bin/*.dmg
+            build/bin/*.sha256
 
       - name: upload artifacts windows
         if: matrix.platform == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
           name: BingPaperDesktop-windows
-          path: build/bin/*
+          path: |
+            build/bin/*.exe
+            build/bin/*.sha256
 
   release:
     needs: package

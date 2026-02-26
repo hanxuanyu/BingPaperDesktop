@@ -274,7 +274,7 @@ Wails 通过代码生成实现前后端 IPC 通信：
 
 | Secret | 默认值 |
 |--------|--------|
-| `APPLE_BUNDLE_ID` | `com.wails.BingPaperDesktop` |
+| `APPLE_BUNDLE_ID` | `com.hxuanyu.BingPaperDesktop` |
 
 #### 可选  Windows 代码签名
 
