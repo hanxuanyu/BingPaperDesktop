@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/disintegration/imaging"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
 	"golang.org/x/image/math/fixed"
@@ -111,49 +112,24 @@ func wrapText(text string, maxChars int) []string {
 }
 
 func Composite(backgroundPath string, overlays []string, destPath string) error {
-	bgFile, err := os.Open(backgroundPath)
-	if err != nil {
-		return err
-	}
-	defer bgFile.Close()
-
-	bgImg, _, err := image.Decode(bgFile)
+	bgImg, err := imaging.Open(backgroundPath)
 	if err != nil {
 		return err
 	}
 
-	bounds := bgImg.Bounds()
-	rgba := image.NewRGBA(bounds)
-	draw.Draw(rgba, bounds, bgImg, bounds.Min, draw.Src)
-
+	// imaging.Open returns a bound-correct image.
+	// We'll use imaging.Overlay to stack layers.
+	result := bgImg
 	for _, overlayPath := range overlays {
 		if overlayPath == "" {
 			continue
 		}
-		if _, err := os.Stat(overlayPath); os.IsNotExist(err) {
-			continue
-		}
-
-		ovFile, err := os.Open(overlayPath)
-		if err != nil {
-			return err
-		}
-
-		ovImg, _, err := image.Decode(ovFile)
-		ovFile.Close()
+		ovImg, err := imaging.Open(overlayPath)
 		if err != nil {
 			continue
 		}
-
-		// Draw overlay onto rgba
-		draw.Draw(rgba, rgba.Bounds(), ovImg, image.Point{}, draw.Over)
+		result = imaging.Overlay(result, ovImg, image.Pt(0, 0), 1.0)
 	}
 
-	out, err := os.Create(destPath)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	return jpeg.Encode(out, rgba, &jpeg.Options{Quality: 95})
+	return imaging.Save(result, destPath, imaging.JPEGQuality(95))
 }

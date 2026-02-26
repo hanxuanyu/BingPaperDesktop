@@ -653,31 +653,51 @@ func (a *App) ApplyHistoryToMonitor(key string, monitorID int, screenW, screenH 
 	// 为每个目标显示器独立合成并应用壁纸
 	a.mu.Lock()
 	for _, m := range targets {
-		applyPath, err := a.prepareWallpaperForMonitor(target, m, cfg)
-		if err != nil {
-			slog.Error("Failed to prepare wallpaper for monitor", "id", m.ID, "error", err)
+		m := m // shadow
+		// 第一阶段：立即设置原图作为壁纸，减少视觉等待感
+		absOriginalPath := filepath.Join(store.GetBaseDir(), target.ImagePath)
+		slog.Debug("Phase 1: Setting original image as wallpaper", "id", m.ID, "path", absOriginalPath)
+		_ = wallpaper.SetOnMonitor(m.ID, absOriginalPath)
+
+		// 更新状态，以便前端立即显示正确的信息
+		a.monitorWallpapers[m.ID] = target.Key
+
+		// 检查是否需要叠加层
+		if !cfg.OverlayMetadata && !cfg.EnableCalendar {
 			continue
 		}
 
-		slog.Info("Applying wallpaper to monitor", "id", m.ID, "name", m.Name, "path", applyPath)
-		if err := wallpaper.SetOnMonitor(m.ID, applyPath); err != nil {
-			if strings.Contains(err.Error(), "IDesktopWallpaper not supported") {
-				slog.Warn("Multi-monitor wallpaper not supported by system, falling back to global setting")
-				_ = wallpaper.Set(applyPath)
-				// 更新状态并跳出显示器循环 (因为它是一个全局设置)
-				a.monitorWallpapers[m.ID] = target.Key
-				break
+		// 第二阶段：异步合成叠加层并更新
+		go func(m wallpaper.Monitor) {
+			applyPath, err := a.prepareWallpaperForMonitor(target, m, cfg)
+			if err != nil {
+				slog.Error("Failed to prepare wallpaper for monitor", "id", m.ID, "error", err)
+				return
 			}
-			slog.Error("Failed to set wallpaper on monitor", "id", m.ID, "error", err)
-			// 如果设置特定显示器失败，尝试全局设置作为回退
-			_ = wallpaper.Set(applyPath)
-		}
-		a.monitorWallpapers[m.ID] = target.Key
+
+			if applyPath == absOriginalPath {
+				return
+			}
+
+			slog.Info("Phase 2: Applying composited wallpaper to monitor", "id", m.ID, "path", applyPath)
+			if err := wallpaper.SetOnMonitor(m.ID, applyPath); err != nil {
+				if strings.Contains(err.Error(), "IDesktopWallpaper not supported") {
+					_ = wallpaper.Set(applyPath)
+				} else {
+					slog.Error("Failed to set composited wallpaper on monitor", "id", m.ID, "error", err)
+					_ = wallpaper.Set(applyPath)
+				}
+			}
+
+			// 合成完成后，虽然 Key 没变，但通知前端可能有助于同步状态（可选）
+			runtime.EventsEmit(a.ctx, "monitor-wallpapers-changed", a.monitorWallpapers)
+		}(m)
 	}
 
-	// Update last fetch and notify frontend
+	// Update last fetch and notify frontend immediately after Phase 1
 	a.lastFetch = &CurrentResult{Item: *target, Success: true}
 	a.mu.Unlock()
+
 	runtime.EventsEmit(a.ctx, "current-image-changed", *target)
 	runtime.EventsEmit(a.ctx, "monitor-wallpapers-changed", a.monitorWallpapers)
 
