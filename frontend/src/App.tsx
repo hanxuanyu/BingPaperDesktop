@@ -83,7 +83,7 @@ function App() {
       const m = await GetMonitors();
       setMonitors(m || []);
     } catch (err) {
-      console.error('Failed to load monitors:', err);
+      // 静默失败，避免托盘/多显示器不可用时刷屏
     }
   }, []);
 
@@ -305,21 +305,16 @@ function App() {
   };
 
   const onResetConfirm = async (onlySettings: boolean) => {
-    console.log("Reset confirmed, onlySettings:", onlySettings);
     setIsResetDialogOpen(false);
     const tid = toast.loading(onlySettings ? '正在重置应用配置...' : '正在重置应用并清理数据...');
     try {
       if (onlySettings) {
-        console.log("Calling ResetSettings...");
         await ResetSettings();
       } else {
-        console.log("Calling ResetApplication...");
         await ResetApplication();
       }
-      console.log("Reset success");
       toast.success(onlySettings ? '应用配置已恢复默认' : '应用数据已清空，配置已恢复默认', { id: tid });
       setIsSettingsOpen(false);
-      // Refresh local state
       await loadConfig();
       if (!onlySettings) {
         await loadHistory();
@@ -328,7 +323,6 @@ function App() {
         fetchToday(true);
       }
     } catch (err) {
-      console.error("Reset error:", err);
       toast.error('重置失败: ' + err, { id: tid });
     }
   };

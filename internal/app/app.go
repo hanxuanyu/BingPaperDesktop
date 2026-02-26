@@ -409,6 +409,14 @@ func (a *App) ListHistory() ([]store.HistoryItem, error) {
 	return idx.Items, nil
 }
 
+// normRatioAndSuffix 将目标比例归一化为 16:9 或 4:3，返回用于文件名的后缀（_16_9 或 _4_3）。
+func normRatioAndSuffix(targetRatio float64) (normRatio float64, ratioSuffix string) {
+	if targetRatio < 1.5 {
+		return 1.333333, "_4_3"
+	}
+	return 1.777777, "_16_9"
+}
+
 // ensureWatermarkOverlay 确保特定比例（16:9 或 4:3）的元数据水印叠加图（PNG）已生成并保存。
 // 若文件已存在则直接返回路径（缓存命中），否则通过 Wails 事件触发前端 Canvas 渲染后等待结果。
 // 使用 wmMu 互斥锁保证同一时刻只有一个叠加渲染请求在进行，避免 wmChan 竞争。
@@ -416,14 +424,7 @@ func (a *App) ensureWatermarkOverlay(meta *bing.Meta, chosen bing.Variant, dayDi
 	a.wmMu.Lock()
 	defer a.wmMu.Unlock()
 
-	// 归一化比例为 16:9 或 4:3
-	normRatio := 1.777777
-	ratioSuffix := "_16_9"
-	if targetRatio < 1.5 {
-		normRatio = 1.333333
-		ratioSuffix = "_4_3"
-	}
-
+	normRatio, ratioSuffix := normRatioAndSuffix(targetRatio)
 	relPath := filepath.Join(dayDir, "watermark"+ratioSuffix+".png")
 	absPath := filepath.Join(store.GetBaseDir(), relPath)
 
@@ -485,13 +486,7 @@ func (a *App) getCalendarOverlay(width, height int, cfg store.Config, targetRati
 		suffix = "h"
 	}
 
-	// 归一化比例为 16:9 或 4:3
-	normRatio := 1.777777
-	ratioSuffix := "_16_9"
-	if targetRatio < 1.5 {
-		normRatio = 1.333333
-		ratioSuffix = "_4_3"
-	}
+	normRatio, ratioSuffix := normRatioAndSuffix(targetRatio)
 
 	relPath := filepath.Join(dayDir, "calendar_cache_"+fmt.Sprintf("%dx%d", width, height)+suffix+ratioSuffix+".png")
 	absPath := filepath.Join(store.GetBaseDir(), relPath)
@@ -963,12 +958,17 @@ func (a *App) AssetsHandler() http.Handler {
 		path := r.URL.Path
 		if strings.HasPrefix(path, "/images/") {
 			relPath := strings.TrimPrefix(path, "/images/")
-			// Convert URL slashes back to system separators
 			relPath = filepath.FromSlash(relPath)
+			// 防止路径穿越：清理后禁止包含 ".."
+			relPath = filepath.Clean(relPath)
+			if strings.Contains(relPath, "..") || filepath.IsAbs(relPath) {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
 			absPath := filepath.Join(store.GetBaseDir(), relPath)
-
-			// Basic security check: ensure the path is within baseDir
-			if !strings.HasPrefix(absPath, store.GetBaseDir()) {
+			// 再次确保最终路径在 baseDir 内（防止 Clean 后与 baseDir 组合逃逸）
+			baseDir := store.GetBaseDir()
+			if !strings.HasPrefix(filepath.Clean(absPath), filepath.Clean(baseDir)) {
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}

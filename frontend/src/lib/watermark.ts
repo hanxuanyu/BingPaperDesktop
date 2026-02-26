@@ -1,7 +1,6 @@
 import { Solar, Lunar, HolidayUtil } from 'lunar-javascript';
 
 export async function renderWatermark(data: any): Promise<string> {
-  console.log("renderWatermark called with:", { ...data, image_path: data.image_path ? "data:..." : undefined });
   const { 
     image_path, title, date, copyright, variant, 
     enable_watermark, enable_calendar, holiday_data,
@@ -50,7 +49,6 @@ export async function renderWatermark(data: any): Promise<string> {
 
   // 2. Draw Calendar if enabled
   if (enable_calendar) {
-    console.log("Drawing calendar...");
     drawCalendar(ctx, canvas, date, holiday_data, data.target_ratio);
   }
 
@@ -77,8 +75,8 @@ function calculateSafeArea(width: number, height: number, targetRatio: number) {
   const topY = (height - visibleHeight) / 2;
   const bottomY = (height + visibleHeight) / 2;
 
-  // 基础边距：可见高度的 5%
-  const paddingX = visibleWidth * 0.04; 
+  // 基础边距：可见区域的 4%
+  const paddingX = visibleWidth * 0.04;
   const paddingY = visibleHeight * 0.04;
 
   return { 
@@ -203,8 +201,6 @@ function drawCalendar(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, 
     if (isNaN(year) || isNaN(month) || isNaN(today)) {
       throw new Error(`Invalid date: ${dateStr}`);
     }
-
-    console.log(`Calendar for: ${year}-${month}-${today}`);
 
     // 日历配置
     const safeArea = calculateSafeArea(canvas.width, canvas.height, targetRatio);
