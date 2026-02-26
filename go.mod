@@ -3,6 +3,7 @@ module BingPaperDesktop
 go 1.23
 
 require (
+	github.com/disintegration/imaging v1.6.2
 	github.com/energye/systray v1.0.3
 	github.com/go-ole/go-ole v1.3.0
 	github.com/wailsapp/wails/v2 v2.11.0
