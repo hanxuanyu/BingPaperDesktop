@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Monitor, ChevronRight } from 'lucide-react';
+import { Monitor } from 'lucide-react';
 import { EventsOn } from '../../wailsjs/runtime';
 import { GetMonitorWallpapers } from '../../wailsjs/go/app/App';
 import { cn } from '@/lib/utils';
@@ -20,11 +20,13 @@ interface MonitorSwitcherProps {
 export function MonitorSwitcher({ onSelect, currentImage }: MonitorSwitcherProps) {
   const [monitorWallpapers, setMonitorWallpapers] = useState<MonitorWallpaperInfo[]>([]);
   const [hoveredId, setHoveredId] = useState<number | null>(null);
+  const [retryByMonitor, setRetryByMonitor] = useState<Record<number, number>>({});
 
   const refreshMonitors = async () => {
     try {
       const data = await GetMonitorWallpapers();
       setMonitorWallpapers(data || []);
+      setRetryByMonitor({});
     } catch (err) {
       console.error('Failed to get monitor wallpapers:', err);
     }
@@ -53,6 +55,11 @@ export function MonitorSwitcher({ onSelect, currentImage }: MonitorSwitcherProps
     <div className="absolute right-6 top-1/2 -translate-y-1/2 z-50 flex flex-col gap-4 p-3 rounded-2xl bg-black/20 backdrop-blur-xl border border-white/10 shadow-2xl items-center transition-all duration-500 hover:bg-black/30">
       {monitorWallpapers.map((mw) => {
         const isActive = currentImage?.key === mw.history_item?.key;
+        const retryCount = retryByMonitor[mw.monitor_id] ?? 0;
+        const hasThumb = Boolean(mw.thumbnail_url) && retryCount !== -1;
+        const thumbSrc = mw.thumbnail_url
+          ? `${mw.thumbnail_url}${mw.thumbnail_url.includes('?') ? '&' : '?'}retry=${Math.max(retryCount, 0)}`
+          : '';
         
         return (
           <div 
@@ -79,11 +86,23 @@ export function MonitorSwitcher({ onSelect, currentImage }: MonitorSwitcherProps
                   : "border-transparent opacity-70 hover:opacity-100 hover:scale-105"
               )}
             >
-              {mw.thumbnail_url ? (
+              {hasThumb ? (
                 <img 
-                  src={mw.thumbnail_url} 
+                  src={thumbSrc}
                   alt={mw.history_item?.title} 
                   className="w-full h-full object-cover"
+                  onError={() => {
+                    setRetryByMonitor((prev) => {
+                      const current = prev[mw.monitor_id] ?? 0;
+                      if (current === -1) {
+                        return prev;
+                      }
+                      if (current >= 2) {
+                        return { ...prev, [mw.monitor_id]: -1 };
+                      }
+                      return { ...prev, [mw.monitor_id]: current + 1 };
+                    });
+                  }}
                 />
               ) : (
                 <div className="w-full h-full bg-slate-800 flex items-center justify-center">

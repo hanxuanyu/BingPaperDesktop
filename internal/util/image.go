@@ -27,13 +27,8 @@ func GenerateThumbnail(srcPath string, destPath string, targetWidth int) error {
 	srcHeight := bounds.Dy()
 
 	if srcWidth <= targetWidth {
-		// No need to resize, just copy or re-save
-		destFile, err := os.Create(destPath)
-		if err != nil {
-			return err
-		}
-		defer destFile.Close()
-		return jpeg.Encode(destFile, img, &jpeg.Options{Quality: 85})
+		// No need to resize, just re-save.
+		return writeJPEGAtomic(destPath, img, 85)
 	}
 
 	targetHeight := (srcHeight * targetWidth) / srcWidth
@@ -42,11 +37,36 @@ func GenerateThumbnail(srcPath string, destPath string, targetWidth int) error {
 	// Use BiLinear for better quality than NearestNeighbor
 	draw.BiLinear.Scale(dst, dst.Bounds(), img, bounds, draw.Over, nil)
 
-	destFile, err := os.Create(destPath)
+	return writeJPEGAtomic(destPath, dst, 85)
+}
+
+func writeJPEGAtomic(destPath string, img image.Image, quality int) error {
+	tmpPath := destPath + ".tmp"
+
+	f, err := os.Create(tmpPath)
 	if err != nil {
 		return err
 	}
-	defer destFile.Close()
 
-	return jpeg.Encode(destFile, dst, &jpeg.Options{Quality: 85})
+	if err := jpeg.Encode(f, img, &jpeg.Options{Quality: quality}); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+
+	_ = os.Remove(destPath)
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return nil
 }
