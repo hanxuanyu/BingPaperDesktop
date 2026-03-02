@@ -2,11 +2,13 @@ package overlay
 
 import (
 	"encoding/base64"
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
 	"image/jpeg"
 	_ "image/png"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -120,16 +122,45 @@ func Composite(backgroundPath string, overlays []string, destPath string) error 
 	// imaging.Open returns a bound-correct image.
 	// We'll use imaging.Overlay to stack layers.
 	result := bgImg
+	bgBounds := result.Bounds()
+	slog.Info("Composite started",
+		"background", backgroundPath,
+		"backgroundSize", fmt.Sprintf("%dx%d", bgBounds.Dx(), bgBounds.Dy()),
+		"overlayCount", len(overlays),
+		"dest", destPath,
+	)
+
 	for _, overlayPath := range overlays {
 		if overlayPath == "" {
 			continue
 		}
 		ovImg, err := imaging.Open(overlayPath)
 		if err != nil {
+			slog.Warn("Composite skipped overlay: failed to open", "overlay", overlayPath, "error", err)
 			continue
 		}
-		result = imaging.Overlay(result, ovImg, image.Pt(0, 0), 1.0)
+
+		bgBounds := result.Bounds()
+		ovBounds := ovImg.Bounds()
+		offsetX := (bgBounds.Dx() - ovBounds.Dx()) / 2
+		offsetY := (bgBounds.Dy() - ovBounds.Dy()) / 2
+
+		slog.Info("Composite overlay applied",
+			"overlay", overlayPath,
+			"overlaySize", fmt.Sprintf("%dx%d", ovBounds.Dx(), ovBounds.Dy()),
+			"offset", fmt.Sprintf("(%d,%d)", offsetX, offsetY),
+		)
+		result = imaging.Overlay(result, ovImg, image.Pt(offsetX, offsetY), 1.0)
 	}
 
-	return imaging.Save(result, destPath, imaging.JPEGQuality(95))
+	if err := imaging.Save(result, destPath, imaging.JPEGQuality(95)); err != nil {
+		return err
+	}
+
+	finalBounds := result.Bounds()
+	slog.Info("Composite finished",
+		"dest", destPath,
+		"finalSize", fmt.Sprintf("%dx%d", finalBounds.Dx(), finalBounds.Dy()),
+	)
+	return nil
 }

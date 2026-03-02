@@ -4,7 +4,7 @@ export async function renderWatermark(data: any): Promise<string> {
   const { 
     image_path, title, date, copyright, variant, 
     enable_watermark, enable_calendar, holiday_data,
-    only_overlay, width, height
+    only_overlay, width, height, target_ratio
   } = data;
 
   const canvas = document.createElement('canvas');
@@ -13,8 +13,10 @@ export async function renderWatermark(data: any): Promise<string> {
 
   let targetWidth = width;
   let targetHeight = height;
+  let sourceImage: HTMLImageElement | null = null;
 
-  if (image_path) {
+  const needSourceImage = Boolean(image_path) && (!only_overlay || !targetWidth || !targetHeight);
+  if (needSourceImage) {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.src = image_path;
@@ -23,51 +25,55 @@ export async function renderWatermark(data: any): Promise<string> {
       img.onload = resolve;
       img.onerror = reject;
     });
-    
+
+    sourceImage = img;
     if (!targetWidth) targetWidth = img.width;
     if (!targetHeight) targetHeight = img.height;
-    
-    canvas.width = targetWidth;
-    canvas.height = targetHeight;
+  }
 
-    if (!only_overlay) {
-      // Draw original image
-      ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+  if (!targetWidth || !targetHeight) {
+    throw new Error("Width and height required when no image_path provided");
+  }
+
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+
+  if (!only_overlay) {
+    if (!sourceImage) {
+      throw new Error("image_path is required when rendering non-overlay output");
     }
-  } else {
-    if (!targetWidth || !targetHeight) {
-       throw new Error("Width and height required when no image_path provided");
-    }
-    canvas.width = targetWidth;
-    canvas.height = targetHeight;
+    // Draw original image
+    ctx.drawImage(sourceImage, 0, 0, targetWidth, targetHeight);
   }
 
   // 1. Draw Watermark if enabled
   if (enable_watermark) {
-    drawWatermark(ctx, canvas, title, date, copyright, variant, data.target_ratio);
+    drawWatermark(ctx, canvas, title, date, copyright, variant, target_ratio);
   }
 
   // 2. Draw Calendar if enabled
   if (enable_calendar) {
-    drawCalendar(ctx, canvas, date, holiday_data, data.target_ratio);
+    drawCalendar(ctx, canvas, date, holiday_data, target_ratio);
   }
 
   return canvas.toDataURL(only_overlay ? 'image/png' : 'image/jpeg', only_overlay ? undefined : 0.95);
 }
 
-function calculateSafeArea(width: number, height: number, targetRatio: number) {
+function calculateSafeArea(width: number, height: number, targetRatio?: number) {
   const currentRatio = width / height;
-  targetRatio = targetRatio || 1.777777; // 默认 16:9
+  const effectiveTargetRatio = targetRatio && targetRatio > 0 ? targetRatio : currentRatio;
 
   let visibleWidth = width;
   let visibleHeight = height;
 
-  if (currentRatio > targetRatio) {
-    // 图片太宽，左右剪
-    visibleWidth = height * targetRatio;
-  } else if (currentRatio < targetRatio) {
-    // 图片太窄，上下剪
-    visibleHeight = width / targetRatio;
+  if (Math.abs(currentRatio - effectiveTargetRatio) > 0.01) {
+    if (currentRatio > effectiveTargetRatio) {
+      // 图片太宽，左右剪
+      visibleWidth = height * effectiveTargetRatio;
+    } else {
+      // 图片太窄，上下剪
+      visibleHeight = width / effectiveTargetRatio;
+    }
   }
 
   const rightX = (width + visibleWidth) / 2;
@@ -89,7 +95,7 @@ function calculateSafeArea(width: number, height: number, targetRatio: number) {
   };
 }
 
-function drawWatermark(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, title: string, date: string, copyright: string, variant: string, targetRatio: number) {
+function drawWatermark(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, title: string, date: string, copyright: string, variant: string, targetRatio?: number) {
   const safeArea = calculateSafeArea(canvas.width, canvas.height, targetRatio);
   
   const titleFontSize = Math.max(24, Math.floor(safeArea.visibleHeight * 0.045));
@@ -182,7 +188,7 @@ function drawWatermark(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement,
   ctx.restore();
 }
 
-function drawCalendar(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, dateStr: string, holidayData: any[], targetRatio: number) {
+function drawCalendar(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, dateStr: string, holidayData: any[], targetRatio?: number) {
   try {
     // ... 解析日期代码保持不变 ...
     const dateParts = dateStr.split('-');

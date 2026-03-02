@@ -2,9 +2,6 @@ package app
 
 import (
 	"fmt"
-	"image"
-	_ "image/jpeg"
-	_ "image/png"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -21,10 +18,10 @@ import (
 
 // MonitorWallpaperInfo 单个显示器的壁纸信息，供前端展示。
 type MonitorWallpaperInfo struct {
-	MonitorID    int                `json:"monitor_id"`
-	MonitorName  string             `json:"monitor_name"`
-	HistoryItem  store.HistoryItem  `json:"history_item"`
-	ThumbnailURL string             `json:"thumbnail_url"`
+	MonitorID    int               `json:"monitor_id"`
+	MonitorName  string            `json:"monitor_name"`
+	HistoryItem  store.HistoryItem `json:"history_item"`
+	ThumbnailURL string            `json:"thumbnail_url"`
 }
 
 func (a *App) GetMonitors() ([]wallpaper.Monitor, error) {
@@ -214,10 +211,22 @@ func (a *App) ApplyHistoryToMonitor(key string, monitorID int, screenW, screenH 
 func (a *App) prepareWallpaperForMonitor(target *store.HistoryItem, m wallpaper.Monitor, cfg store.Config) (string, error) {
 	absOriginalPath := filepath.Join(store.GetBaseDir(), target.ImagePath)
 
-	targetRatio := 1.777777
-	if m.Width > 0 && m.Height > 0 {
-		targetRatio = float64(m.Width) / float64(m.Height)
+	renderW, renderH := m.Width, m.Height
+	if renderW <= 0 {
+		renderW = 1920
 	}
+	if renderH <= 0 {
+		renderH = 1080
+	}
+
+	slog.Info("Preparing wallpaper for monitor",
+		"monitorID", m.ID,
+		"monitorName", m.Name,
+		"renderSize", fmt.Sprintf("%dx%d", renderW, renderH),
+		"overlayMetadata", cfg.OverlayMetadata,
+		"enableCalendar", cfg.EnableCalendar,
+		"imagePath", target.ImagePath,
+	)
 
 	showOverlay := cfg.OverlayMetadata || cfg.EnableCalendar
 	if !showOverlay {
@@ -236,23 +245,16 @@ func (a *App) prepareWallpaperForMonitor(target *store.HistoryItem, m wallpaper.
 		tempChosen := bing.Variant{
 			Variant: target.ChosenVariant,
 		}
-		wmPath := a.ensureWatermarkOverlay(tempMeta, tempChosen, dayDir, target.ImagePath, cfg, targetRatio)
+		wmPath := a.ensureWatermarkOverlay(tempMeta, tempChosen, dayDir, renderW, renderH)
 		if wmPath != "" {
 			overlays = append(overlays, filepath.Join(store.GetBaseDir(), wmPath))
 		}
 	}
 
 	if cfg.EnableCalendar {
-		file, err := os.Open(absOriginalPath)
-		if err == nil {
-			imgCfg, _, err := image.DecodeConfig(file)
-			file.Close()
-			if err == nil {
-				calPath := a.getCalendarOverlay(imgCfg.Width, imgCfg.Height, cfg, targetRatio)
-				if calPath != "" {
-					overlays = append(overlays, calPath)
-				}
-			}
+		calPath := a.getCalendarOverlay(renderW, renderH, cfg)
+		if calPath != "" {
+			overlays = append(overlays, calPath)
 		}
 	}
 

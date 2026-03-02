@@ -81,11 +81,6 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 		}
 	}
 
-	if cfg.OverlayMetadata {
-		a.ensureWatermarkOverlay(meta, chosen, dayDir, relImagePath, cfg, 16.0/9.0)
-		a.ensureWatermarkOverlay(meta, chosen, dayDir, relImagePath, cfg, 4.0/3.0)
-	}
-
 	item := store.HistoryItem{
 		Key:           key,
 		Date:          meta.Date,
