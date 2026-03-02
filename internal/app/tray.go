@@ -34,7 +34,8 @@ func (a *App) SetupTray(appIcon, appIconIco []byte) (func(), func()) {
 		systray.SetOnClick(func(menu systray.IMenu) {
 			slog.Info("Tray: Left click triggered")
 			if runtime.GOOS == "darwin" {
-				menu.ShowMenu()
+				showWindow()
+				return
 			}
 		})
 		systray.SetOnRClick(func(menu systray.IMenu) {
