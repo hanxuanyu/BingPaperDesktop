@@ -235,11 +235,22 @@ func (a *App) prepareWallpaperForMonitor(target *store.HistoryItem, m wallpaper.
 	}
 
 	renderRatio := float64(renderW) / float64(renderH)
+	canvasW, canvasH := renderW, renderH
+	if imgW, imgH, err := readImageSize(absOriginalPath); err != nil {
+		slog.Warn("Failed to decode original image size, fallback to monitor render size",
+			"monitorID", m.ID,
+			"path", absOriginalPath,
+			"error", err,
+		)
+	} else {
+		canvasW, canvasH = imgW, imgH
+	}
 
 	slog.Info("Preparing wallpaper for monitor",
 		"monitorID", m.ID,
 		"monitorName", m.Name,
 		"renderSize", fmt.Sprintf("%dx%d", renderW, renderH),
+		"overlayCanvasSize", fmt.Sprintf("%dx%d", canvasW, canvasH),
 		"renderRatio", renderRatio,
 		"overlayMetadata", cfg.OverlayMetadata,
 		"enableCalendar", cfg.EnableCalendar,
@@ -269,14 +280,14 @@ func (a *App) prepareWallpaperForMonitor(target *store.HistoryItem, m wallpaper.
 		tempChosen := bing.Variant{
 			Variant: target.ChosenVariant,
 		}
-		wmPath := a.ensureWatermarkOverlay(tempMeta, tempChosen, dayDir, renderW, renderH)
+		wmPath := a.ensureWatermarkOverlay(tempMeta, tempChosen, dayDir, canvasW, canvasH, renderW, renderH, renderRatio)
 		if wmPath != "" {
 			overlays = append(overlays, filepath.Join(store.GetBaseDir(), wmPath))
 		}
 	}
 
 	if cfg.EnableCalendar {
-		calPath := a.getCalendarOverlay(renderW, renderH, cfg)
+		calPath := a.getCalendarOverlay(canvasW, canvasH, renderW, renderH, renderRatio, cfg)
 		if calPath != "" {
 			overlays = append(overlays, calPath)
 		}

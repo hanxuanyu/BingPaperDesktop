@@ -147,26 +147,45 @@ func Composite(backgroundPath string, overlays []string, destPath string) error 
 
 		bgBounds := result.Bounds()
 		ovBounds := ovImg.Bounds()
-		offsetX := (bgBounds.Dx() - ovBounds.Dx()) / 2
-		offsetY := (bgBounds.Dy() - ovBounds.Dy()) / 2
+		preparedOverlay := ovImg
+		resized := false
+
+		if ovBounds.Dx() != bgBounds.Dx() || ovBounds.Dy() != bgBounds.Dy() {
+			// Keep proportions as much as possible; fill canvas when aspect ratios differ.
+			if ovBounds.Dy() > 0 && bgBounds.Dy() > 0 {
+				ovRatio := float64(ovBounds.Dx()) / float64(ovBounds.Dy())
+				bgRatio := float64(bgBounds.Dx()) / float64(bgBounds.Dy())
+				if absFloat(ovRatio-bgRatio) > 0.001 {
+					preparedOverlay = imaging.Fill(ovImg, bgBounds.Dx(), bgBounds.Dy(), imaging.Center, imaging.Lanczos)
+				} else {
+					preparedOverlay = imaging.Resize(ovImg, bgBounds.Dx(), bgBounds.Dy(), imaging.Lanczos)
+				}
+			} else {
+				preparedOverlay = imaging.Resize(ovImg, bgBounds.Dx(), bgBounds.Dy(), imaging.Lanczos)
+			}
+			resized = true
+		}
+
+		finalOvBounds := preparedOverlay.Bounds()
 		currentBgRatio := 0.0
 		if bgBounds.Dy() > 0 {
 			currentBgRatio = float64(bgBounds.Dx()) / float64(bgBounds.Dy())
 		}
 		overlayRatio := 0.0
-		if ovBounds.Dy() > 0 {
-			overlayRatio = float64(ovBounds.Dx()) / float64(ovBounds.Dy())
+		if finalOvBounds.Dy() > 0 {
+			overlayRatio = float64(finalOvBounds.Dx()) / float64(finalOvBounds.Dy())
 		}
 
 		slog.Info("Composite overlay applied",
 			"overlay", overlayPath,
-			"overlaySize", fmt.Sprintf("%dx%d", ovBounds.Dx(), ovBounds.Dy()),
+			"overlaySize", fmt.Sprintf("%dx%d", finalOvBounds.Dx(), finalOvBounds.Dy()),
 			"overlayRatio", overlayRatio,
 			"backgroundRatio", currentBgRatio,
 			"ratioDelta", overlayRatio-currentBgRatio,
-			"offset", fmt.Sprintf("(%d,%d)", offsetX, offsetY),
+			"resizedToBackground", resized,
+			"offset", "(0,0)",
 		)
-		result = imaging.Overlay(result, ovImg, image.Pt(offsetX, offsetY), 1.0)
+		result = imaging.Overlay(result, preparedOverlay, image.Pt(0, 0), 1.0)
 	}
 
 	if err := imaging.Save(result, destPath, imaging.JPEGQuality(95)); err != nil {
@@ -184,4 +203,11 @@ func Composite(backgroundPath string, overlays []string, destPath string) error 
 		"finalRatio", finalRatio,
 	)
 	return nil
+}
+
+func absFloat(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
