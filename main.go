@@ -108,6 +108,36 @@ func main() {
 		Width:       1024,
 		Height:      768,
 		StartHidden: true,
+		SingleInstanceLock: &options.SingleInstanceLock{
+			UniqueId: "BingPaperDesktop.SingleInstance",
+			OnSecondInstanceLaunch: func(secondInstanceData options.SecondInstanceData) {
+				slog.Info("Second instance launch detected, reusing existing instance",
+					"args", secondInstanceData.Args,
+					"workingDirectory", secondInstanceData.WorkingDirectory,
+				)
+
+				go func() {
+					ctx := appInstance.GetContext()
+					if ctx == nil {
+						slog.Warn("Cannot show existing window: app context not ready yet")
+						return
+					}
+					wruntime.EventsEmit(ctx, "prepare-show-window")
+
+					if runtime.GOOS == "darwin" {
+						cfg, _ := store.LoadConfig()
+						if !cfg.HideDockIcon {
+							util.ShowDockIcon()
+						}
+					}
+
+					if wruntime.WindowIsMinimised(ctx) {
+						wruntime.WindowUnminimise(ctx)
+					}
+					wruntime.WindowShow(ctx)
+				}()
+			},
+		},
 		AssetServer: &assetserver.Options{
 			Assets:  assets,
 			Handler: appInstance.AssetsHandler(),

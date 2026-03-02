@@ -22,11 +22,31 @@ interface HistoryItemCardProps {
 export function HistoryItemCard({ item, monitors, onApply, onDelete }: HistoryItemCardProps) {
   const [thumb, setThumb] = useState<string>('');
   const [isLoaded, setIsLoaded] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const hasMultipleMonitors = monitors && monitors.length > 1;
 
   useEffect(() => {
-    GetThumbnailURL(item.image_path).then(setThumb).catch(console.error);
+    let cancelled = false;
+    setIsLoaded(false);
+    setRetryCount(0);
+    setThumb('');
+
+    GetThumbnailURL(item.image_path)
+      .then((url) => {
+        if (!cancelled) {
+          setThumb(url);
+        }
+      })
+      .catch(console.error);
+
+    return () => {
+      cancelled = true;
+    };
   }, [item.image_path]);
+
+  const thumbSrc = thumb
+    ? `${thumb}${thumb.includes('?') ? '&' : '?'}retry=${retryCount}`
+    : '';
 
   return (
     <div className="group relative overflow-hidden rounded-xl border bg-card text-card-foreground shadow-md hover:shadow-2xl transition-all duration-500 ease-in-out">
@@ -34,9 +54,17 @@ export function HistoryItemCard({ item, monitors, onApply, onDelete }: HistoryIt
         {thumb ? (
           <>
             <img 
-              src={thumb} 
+              src={thumbSrc}
               alt={item.title} 
               onLoad={() => setIsLoaded(true)}
+              onError={() => {
+                setIsLoaded(false);
+                if (retryCount >= 2) {
+                  setThumb('');
+                  return;
+                }
+                setRetryCount((prev) => prev + 1);
+              }}
               className={cn(
                 "h-full w-full object-contain transition-all duration-700 group-hover:scale-105",
                 isLoaded ? "opacity-100 scale-100" : "opacity-0 scale-105"

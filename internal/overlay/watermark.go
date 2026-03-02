@@ -2,11 +2,13 @@ package overlay
 
 import (
 	"encoding/base64"
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
 	"image/jpeg"
 	_ "image/png"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -120,16 +122,92 @@ func Composite(backgroundPath string, overlays []string, destPath string) error 
 	// imaging.Open returns a bound-correct image.
 	// We'll use imaging.Overlay to stack layers.
 	result := bgImg
+	bgBounds := result.Bounds()
+	bgRatio := 0.0
+	if bgBounds.Dy() > 0 {
+		bgRatio = float64(bgBounds.Dx()) / float64(bgBounds.Dy())
+	}
+	slog.Info("Composite started",
+		"background", backgroundPath,
+		"backgroundSize", fmt.Sprintf("%dx%d", bgBounds.Dx(), bgBounds.Dy()),
+		"backgroundRatio", bgRatio,
+		"overlayCount", len(overlays),
+		"dest", destPath,
+	)
+
 	for _, overlayPath := range overlays {
 		if overlayPath == "" {
 			continue
 		}
 		ovImg, err := imaging.Open(overlayPath)
 		if err != nil {
+			slog.Warn("Composite skipped overlay: failed to open", "overlay", overlayPath, "error", err)
 			continue
 		}
-		result = imaging.Overlay(result, ovImg, image.Pt(0, 0), 1.0)
+
+		bgBounds := result.Bounds()
+		ovBounds := ovImg.Bounds()
+		preparedOverlay := ovImg
+		resized := false
+
+		if ovBounds.Dx() != bgBounds.Dx() || ovBounds.Dy() != bgBounds.Dy() {
+			// Keep proportions as much as possible; fill canvas when aspect ratios differ.
+			if ovBounds.Dy() > 0 && bgBounds.Dy() > 0 {
+				ovRatio := float64(ovBounds.Dx()) / float64(ovBounds.Dy())
+				bgRatio := float64(bgBounds.Dx()) / float64(bgBounds.Dy())
+				if absFloat(ovRatio-bgRatio) > 0.001 {
+					preparedOverlay = imaging.Fill(ovImg, bgBounds.Dx(), bgBounds.Dy(), imaging.Center, imaging.Lanczos)
+				} else {
+					preparedOverlay = imaging.Resize(ovImg, bgBounds.Dx(), bgBounds.Dy(), imaging.Lanczos)
+				}
+			} else {
+				preparedOverlay = imaging.Resize(ovImg, bgBounds.Dx(), bgBounds.Dy(), imaging.Lanczos)
+			}
+			resized = true
+		}
+
+		finalOvBounds := preparedOverlay.Bounds()
+		currentBgRatio := 0.0
+		if bgBounds.Dy() > 0 {
+			currentBgRatio = float64(bgBounds.Dx()) / float64(bgBounds.Dy())
+		}
+		overlayRatio := 0.0
+		if finalOvBounds.Dy() > 0 {
+			overlayRatio = float64(finalOvBounds.Dx()) / float64(finalOvBounds.Dy())
+		}
+
+		slog.Info("Composite overlay applied",
+			"overlay", overlayPath,
+			"overlaySize", fmt.Sprintf("%dx%d", finalOvBounds.Dx(), finalOvBounds.Dy()),
+			"overlayRatio", overlayRatio,
+			"backgroundRatio", currentBgRatio,
+			"ratioDelta", overlayRatio-currentBgRatio,
+			"resizedToBackground", resized,
+			"offset", "(0,0)",
+		)
+		result = imaging.Overlay(result, preparedOverlay, image.Pt(0, 0), 1.0)
 	}
 
-	return imaging.Save(result, destPath, imaging.JPEGQuality(95))
+	if err := imaging.Save(result, destPath, imaging.JPEGQuality(95)); err != nil {
+		return err
+	}
+
+	finalBounds := result.Bounds()
+	finalRatio := 0.0
+	if finalBounds.Dy() > 0 {
+		finalRatio = float64(finalBounds.Dx()) / float64(finalBounds.Dy())
+	}
+	slog.Info("Composite finished",
+		"dest", destPath,
+		"finalSize", fmt.Sprintf("%dx%d", finalBounds.Dx(), finalBounds.Dy()),
+		"finalRatio", finalRatio,
+	)
+	return nil
+}
+
+func absFloat(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }

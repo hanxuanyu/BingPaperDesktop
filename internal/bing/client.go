@@ -52,13 +52,12 @@ type Variant struct {
 	Variant    string `json:"variant"` // "1920x1080" or "UHD"
 }
 
-// httpClient 复用单个 HTTP 客户端实例，避免每次请求都创建新连接
+// Reuse a single HTTP client to avoid creating new connections each call.
 var httpClient = &http.Client{Timeout: 15 * time.Second}
 
-// FetchMeta 根据 apiType 从指定 URL 拉取今日壁纸元数据，并统一转换为内部 Meta 结构体。
-// 支持两种格式：
-//   - "bing": 必应官方 HPImageArchive JSON（仅含单张 UHD 图片）
-//   - "custom"(默认): BingPaper 服务端自定义格式（含多分辨率变体列表）
+// FetchMeta fetches today's image metadata from either:
+// - "bing": Bing official HPImageArchive JSON
+// - "custom": custom/BingPaper compatible JSON
 func FetchMeta(apiType, url string) (*Meta, error) {
 	slog.Info("Fetching meta", "type", apiType, "url", url)
 	client := httpClient
@@ -91,7 +90,10 @@ func FetchMeta(apiType, url string) (*Meta, error) {
 		if len(official.Images) == 0 {
 			return nil, fmt.Errorf("no images found in official response")
 		}
+
 		img := official.Images[0]
+		officialImageURL := normalizeOfficialImageURL("https://www.bing.com" + img.URL)
+
 		meta := &Meta{
 			Copyright:     img.Copyright,
 			CopyrightLink: img.CopyrightLink,
@@ -105,12 +107,13 @@ func FetchMeta(apiType, url string) (*Meta, error) {
 			Variants: []Variant{
 				{
 					Variant: "UHD",
-					URL:     "https://www.bing.com" + img.URL,
+					URL:     officialImageURL,
 					Format:  "jpg",
 				},
 			},
 		}
-		slog.Debug("Fetched meta from Bing official", "title", meta.Title, "date", meta.Date)
+
+		slog.Debug("Fetched meta from Bing official", "title", meta.Title, "date", meta.Date, "imageURL", officialImageURL)
 		return meta, nil
 	}
 
@@ -123,11 +126,7 @@ func FetchMeta(apiType, url string) (*Meta, error) {
 	return &meta, nil
 }
 
-// SelectVariant 从 meta.Variants 中为给定的物理屏幕尺寸选择最优图片变体。
-// 选择策略（优先级递减）：
-//  1. forceUHD=true 时直接返回 UHD 变体（若存在）
-//  2. 宽高比最接近屏幕的变体集合（允许 2% 误差）
-//  3. 在候选集合中，优先 UHD；其次选分辨率≥屏幕且最小的变体；最后选最大的变体
+// SelectVariant chooses the best variant based on screen size/aspect.
 func SelectVariant(meta *Meta, screenW, screenH int, forceUHD bool) Variant {
 	if forceUHD {
 		for _, v := range meta.Variants {
@@ -156,7 +155,6 @@ func SelectVariant(meta *Meta, screenW, screenH int, forceUHD bool) Variant {
 		infos = append(infos, variantInfo{v, w, h})
 	}
 
-	// 1. Filter by aspect ratio (default)
 	candidates := []variantInfo{}
 	for _, info := range infos {
 		aspect := float64(info.w) / float64(info.h)
@@ -173,15 +171,14 @@ func SelectVariant(meta *Meta, screenW, screenH int, forceUHD bool) Variant {
 		}
 	}
 
-	// 2. Select from candidates
-	// Priority 1: UHD among candidates
+	// Priority 1: UHD among candidates.
 	for _, c := range candidates {
 		if c.v.Variant == "UHD" {
 			return c.v
 		}
 	}
 
-	// Priority 2: Larger than screen, pick smallest
+	// Priority 2: larger than screen, pick smallest.
 	var largerThanScreen []variantInfo
 	for _, c := range candidates {
 		if c.w >= screenW && c.h >= screenH {
@@ -199,7 +196,7 @@ func SelectVariant(meta *Meta, screenW, screenH int, forceUHD bool) Variant {
 			}
 		}
 	} else {
-		// Priority 3: Smaller than screen, pick largest
+		// Priority 3: smaller than screen, pick largest.
 		maxPixels := -1.0
 		for _, c := range candidates {
 			pixels := float64(c.w * c.h)
@@ -219,15 +216,43 @@ func parseResolution(res string) (int, int) {
 	}
 	parts := strings.Split(res, "x")
 	if len(parts) != 2 {
-		return 1920, 1080 // Fallback
+		return 1920, 1080
 	}
 	w, _ := strconv.Atoi(parts[0])
 	h, _ := strconv.Atoi(parts[1])
 	return w, h
 }
 
-// DownloadImage 从 url 下载图片并保存到 destPath，使用临时文件（.part）保证下载原子性。
-// 内置最多 3 次指数退避重试（500ms / 1s / 2s）。
+// normalizeOfficialImageURL strips any trailing params after the first image extension.
+// Example:
+// /th?id=..._UHD.jpg&rf=...&w=1920 -> /th?id=..._UHD.jpg
+func normalizeOfficialImageURL(raw string) string {
+	if raw == "" {
+		return raw
+	}
+
+	lower := strings.ToLower(raw)
+	exts := []string{".jpg", ".jpeg", ".png", ".webp"}
+
+	cut := len(raw)
+	found := false
+	for _, ext := range exts {
+		if idx := strings.Index(lower, ext); idx >= 0 {
+			end := idx + len(ext)
+			if !found || end < cut {
+				cut = end
+				found = true
+			}
+		}
+	}
+
+	if !found {
+		return raw
+	}
+	return raw[:cut]
+}
+
+// DownloadImage downloads an image to destPath using a temporary .part file.
 func DownloadImage(url, destPath string) error {
 	slog.Info("Downloading image", "url", url, "dest", destPath)
 	tmpPath := destPath + ".part"

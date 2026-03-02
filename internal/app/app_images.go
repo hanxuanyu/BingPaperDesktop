@@ -3,16 +3,23 @@ package app
 import (
 	"encoding/base64"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"log/slog"
 
 	"BingPaperDesktop/internal/store"
 	"BingPaperDesktop/internal/util"
 )
+
+var thumbnailLocks sync.Map
 
 func (a *App) GetImageDataURL(relPath string) (string, error) {
 	if relPath == "" {
@@ -40,26 +47,38 @@ func (a *App) GetThumbnailURL(relPath string) (string, error) {
 
 	thumbRelPath := filepath.Join("thumbnails", relPath)
 	thumbAbsPath := filepath.Join(store.GetBaseDir(), thumbRelPath)
+	srcAbsPath := filepath.Join(store.GetBaseDir(), relPath)
+	srcURLPath := filepath.ToSlash(relPath)
 
-	if _, err := os.Stat(thumbAbsPath); os.IsNotExist(err) {
-		srcAbsPath := filepath.Join(store.GetBaseDir(), relPath)
-		if _, err := os.Stat(srcAbsPath); err != nil {
-			return "", err
-		}
+	if _, err := os.Stat(srcAbsPath); err != nil {
+		return "", err
+	}
+
+	lock := getThumbnailLock(thumbAbsPath)
+	lock.Lock()
+	defer lock.Unlock()
+
+	if !isImageFileReady(thumbAbsPath) {
+		_ = os.Remove(thumbAbsPath)
 
 		if err := os.MkdirAll(filepath.Dir(thumbAbsPath), 0755); err != nil {
 			return "", err
 		}
 
-		slog.Info("Generating thumbnail", "src", relPath)
+		slog.Info("Generating thumbnail", "src", relPath, "dest", thumbRelPath)
 		if err := util.GenerateThumbnail(srcAbsPath, thumbAbsPath, 400); err != nil {
-			slog.Error("Failed to generate thumbnail", "error", err)
-			return "/images/" + relPath, nil
+			slog.Error("Failed to generate thumbnail", "src", relPath, "error", err)
+			return withVersion("/images/"+srcURLPath, fileVersion(srcAbsPath)), nil
 		}
 	}
 
+	if !isImageFileReady(thumbAbsPath) {
+		slog.Warn("Thumbnail still invalid after generation, fallback to original", "thumb", thumbRelPath)
+		return withVersion("/images/"+srcURLPath, fileVersion(srcAbsPath)), nil
+	}
+
 	urlPath := filepath.ToSlash(thumbRelPath)
-	return "/images/" + urlPath, nil
+	return withVersion("/images/"+urlPath, fileVersion(thumbAbsPath)), nil
 }
 
 func (a *App) GetImageURL(relPath string) (string, error) {
@@ -93,10 +112,51 @@ func (a *App) AssetsHandler() http.Handler {
 				return
 			}
 
-			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			urlRelPath := filepath.ToSlash(relPath)
+			if strings.HasPrefix(urlRelPath, "thumbnails/") {
+				w.Header().Set("Cache-Control", "no-cache")
+			} else {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			}
 			http.ServeFile(w, r, absPath)
 			return
 		}
 		http.NotFound(w, r)
 	})
+}
+
+func getThumbnailLock(path string) *sync.Mutex {
+	v, _ := thumbnailLocks.LoadOrStore(path, &sync.Mutex{})
+	return v.(*sync.Mutex)
+}
+
+func isImageFileReady(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.Size() == 0 {
+		return false
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	_, _, err = image.DecodeConfig(f)
+	return err == nil
+}
+
+func fileVersion(path string) int64 {
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Now().UnixNano()
+	}
+	return info.ModTime().UnixNano()
+}
+
+func withVersion(url string, version int64) string {
+	if strings.Contains(url, "?") {
+		return fmt.Sprintf("%s&v=%d", url, version)
+	}
+	return fmt.Sprintf("%s?v=%d", url, version)
 }

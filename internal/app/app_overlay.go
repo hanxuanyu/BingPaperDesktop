@@ -2,6 +2,9 @@ package app
 
 import (
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"path/filepath"
 	"time"
 
@@ -15,36 +18,43 @@ import (
 	"BingPaperDesktop/internal/store"
 )
 
-// normRatioAndSuffix 将目标比例归一化为 16:9 或 4:3，返回用于文件名的后缀（_16_9 或 _4_3）。
-func normRatioAndSuffix(targetRatio float64) (normRatio float64, ratioSuffix string) {
-	if targetRatio < 1.5 {
-		return 1.333333, "_4_3"
-	}
-	return 1.777777, "_16_9"
-}
-
-// ensureWatermarkOverlay 确保特定比例（16:9 或 4:3）的元数据水印叠加图（PNG）已生成并保存。
-func (a *App) ensureWatermarkOverlay(meta *bing.Meta, chosen bing.Variant, dayDir, relImagePath string, cfg store.Config, targetRatio float64) string {
+// ensureWatermarkOverlay 确保元数据水印叠加图（PNG）已生成并保存。
+// canvasW/canvasH: 叠加层渲染尺寸（应与原图一致）
+// targetW/targetH: 目标显示器尺寸（用于计算可见安全区域）
+func (a *App) ensureWatermarkOverlay(meta *bing.Meta, chosen bing.Variant, dayDir string, canvasW, canvasH, targetW, targetH int, targetRatio float64) string {
 	a.wmMu.Lock()
 	defer a.wmMu.Unlock()
 
-	normRatio, ratioSuffix := normRatioAndSuffix(targetRatio)
-	relPath := filepath.Join(dayDir, "watermark"+ratioSuffix+".png")
+	if canvasW <= 0 {
+		canvasW = 1920
+	}
+	if canvasH <= 0 {
+		canvasH = 1080
+	}
+	if targetW <= 0 {
+		targetW = canvasW
+	}
+	if targetH <= 0 {
+		targetH = canvasH
+	}
+	if targetRatio <= 0 {
+		targetRatio = float64(targetW) / float64(targetH)
+	}
+
+	relPath := filepath.Join(dayDir, "watermark_cache_"+fmt.Sprintf("c%dx%d_t%dx%d", canvasW, canvasH, targetW, targetH)+".png")
 	absPath := filepath.Join(store.GetBaseDir(), relPath)
 
 	if _, err := os.Stat(absPath); err == nil {
+		logOverlayImageInfo(absPath, "watermark", canvasW, canvasH, targetRatio, true)
 		return relPath
 	}
 
-	slog.Info("Requesting frontend to render watermark overlay", "image", relImagePath, "ratio", normRatio)
-	url, err := a.GetImageURL(relImagePath)
-	if err != nil {
-		slog.Error("Failed to get image url", "error", err)
-		return ""
-	}
+	slog.Info("Requesting frontend to render watermark overlay",
+		"canvasSize", fmt.Sprintf("%dx%d", canvasW, canvasH),
+		"targetSize", fmt.Sprintf("%dx%d", targetW, targetH),
+		"ratio", targetRatio)
 
 	runtime.EventsEmit(a.ctx, "render-watermark", OverlayRequest{
-		ImagePath:       url,
 		Title:           meta.Title,
 		Date:            meta.Date,
 		Copyright:       meta.Copyright,
@@ -52,7 +62,9 @@ func (a *App) ensureWatermarkOverlay(meta *bing.Meta, chosen bing.Variant, dayDi
 		EnableWatermark: true,
 		EnableCalendar:  false,
 		OnlyOverlay:     true,
-		TargetRatio:     normRatio,
+		Width:           canvasW,
+		Height:          canvasH,
+		TargetRatio:     targetRatio,
 	})
 
 	select {
@@ -65,19 +77,39 @@ func (a *App) ensureWatermarkOverlay(meta *bing.Meta, chosen bing.Variant, dayDi
 			slog.Error("Failed to save watermark overlay", "path", absPath, "error", err)
 			return ""
 		}
-		slog.Info("Watermark overlay saved", "path", relPath)
+		logOverlayImageInfo(absPath, "watermark", canvasW, canvasH, targetRatio, false)
 		return relPath
 	case <-time.After(10 * time.Second):
 		slog.Error("Watermark overlay processing timeout — frontend did not respond in time",
-			"image", relImagePath, "ratio", targetRatio)
+			"canvasSize", fmt.Sprintf("%dx%d", canvasW, canvasH),
+			"targetSize", fmt.Sprintf("%dx%d", targetW, targetH),
+			"ratio", targetRatio)
 		return ""
 	}
 }
 
-// getCalendarOverlay 获取当日的特定比例日历叠加层，按日期和分辨率缓存。
-func (a *App) getCalendarOverlay(width, height int, cfg store.Config, targetRatio float64) string {
+// getCalendarOverlay 获取当日的日历叠加层，按日期和尺寸缓存。
+// canvasW/canvasH: 叠加层渲染尺寸（应与原图一致）
+// targetW/targetH: 目标显示器尺寸（用于计算可见安全区域）
+func (a *App) getCalendarOverlay(canvasW, canvasH, targetW, targetH int, targetRatio float64, cfg store.Config) string {
 	a.wmMu.Lock()
 	defer a.wmMu.Unlock()
+
+	if canvasW <= 0 {
+		canvasW = 1920
+	}
+	if canvasH <= 0 {
+		canvasH = 1080
+	}
+	if targetW <= 0 {
+		targetW = canvasW
+	}
+	if targetH <= 0 {
+		targetH = canvasH
+	}
+	if targetRatio <= 0 {
+		targetRatio = float64(targetW) / float64(targetH)
+	}
 
 	today := time.Now().Format("2006-01-02")
 	dayDir := filepath.Join("data", today)
@@ -89,16 +121,19 @@ func (a *App) getCalendarOverlay(width, height int, cfg store.Config, targetRati
 		suffix = "h"
 	}
 
-	normRatio, ratioSuffix := normRatioAndSuffix(targetRatio)
-
-	relPath := filepath.Join(dayDir, "calendar_cache_"+fmt.Sprintf("%dx%d", width, height)+suffix+ratioSuffix+".png")
+	relPath := filepath.Join(dayDir, "calendar_cache_"+fmt.Sprintf("c%dx%d_t%dx%d", canvasW, canvasH, targetW, targetH)+suffix+".png")
 	absPath := filepath.Join(store.GetBaseDir(), relPath)
 
 	if _, err := os.Stat(absPath); err == nil {
+		logOverlayImageInfo(absPath, "calendar", canvasW, canvasH, targetRatio, true)
 		return absPath
 	}
 
-	slog.Info("Requesting frontend to render calendar overlay", "date", today, "size", fmt.Sprintf("%dx%d", width, height), "ratio", normRatio)
+	slog.Info("Requesting frontend to render calendar overlay",
+		"date", today,
+		"canvasSize", fmt.Sprintf("%dx%d", canvasW, canvasH),
+		"targetSize", fmt.Sprintf("%dx%d", targetW, targetH),
+		"ratio", targetRatio)
 
 	var holidayData []store.HolidayDay
 	if cfg.EnableHoliday {
@@ -114,9 +149,9 @@ func (a *App) getCalendarOverlay(width, height int, cfg store.Config, targetRati
 		EnableCalendar:  true,
 		HolidayData:     holidayData,
 		OnlyOverlay:     true,
-		Width:           width,
-		Height:          height,
-		TargetRatio:     normRatio,
+		Width:           canvasW,
+		Height:          canvasH,
+		TargetRatio:     targetRatio,
 	})
 
 	select {
@@ -129,13 +164,71 @@ func (a *App) getCalendarOverlay(width, height int, cfg store.Config, targetRati
 			slog.Error("Failed to save calendar overlay", "path", absPath, "error", err)
 			return ""
 		}
-		slog.Info("Calendar overlay saved", "path", relPath)
+		logOverlayImageInfo(absPath, "calendar", canvasW, canvasH, targetRatio, false)
 		return absPath
 	case <-time.After(10 * time.Second):
 		slog.Error("Calendar overlay processing timeout — frontend did not respond in time",
-			"date", today, "size", fmt.Sprintf("%dx%d", width, height))
+			"date", today,
+			"canvasSize", fmt.Sprintf("%dx%d", canvasW, canvasH),
+			"targetSize", fmt.Sprintf("%dx%d", targetW, targetH))
 		return ""
 	}
+}
+
+func logOverlayImageInfo(absPath, kind string, requestedW, requestedH int, targetRatio float64, cacheHit bool) {
+	file, err := os.Open(absPath)
+	if err != nil {
+		slog.Warn("Overlay image info skipped: open failed", "kind", kind, "path", absPath, "error", err)
+		return
+	}
+	defer file.Close()
+
+	cfg, format, err := image.DecodeConfig(file)
+	if err != nil {
+		slog.Warn("Overlay image info skipped: decode failed", "kind", kind, "path", absPath, "error", err)
+		return
+	}
+
+	status := "generated"
+	if cacheHit {
+		status = "cache-hit"
+	}
+
+	actualRatio := 0.0
+	if cfg.Height > 0 {
+		actualRatio = float64(cfg.Width) / float64(cfg.Height)
+	}
+	ratioDelta := actualRatio - targetRatio
+
+	slog.Info("Overlay image ready",
+		"kind", kind,
+		"status", status,
+		"path", absPath,
+		"format", format,
+		"requestedSize", fmt.Sprintf("%dx%d", requestedW, requestedH),
+		"actualSize", fmt.Sprintf("%dx%d", cfg.Width, cfg.Height),
+		"targetRatio", targetRatio,
+		"actualRatio", actualRatio,
+		"ratioDelta", ratioDelta,
+	)
+}
+
+func readImageSize(absPath string) (int, int, error) {
+	file, err := os.Open(absPath)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer file.Close()
+
+	cfg, _, err := image.DecodeConfig(file)
+	if err != nil {
+		return 0, 0, err
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return 0, 0, fmt.Errorf("invalid image size: %dx%d", cfg.Width, cfg.Height)
+	}
+
+	return cfg.Width, cfg.Height, nil
 }
 
 // SubmitWatermark 接收前端 Canvas 渲染完成的 Base64 图片数据，投递到水印处理 channel。
