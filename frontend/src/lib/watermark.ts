@@ -35,8 +35,13 @@ export async function renderWatermark(data: any): Promise<string> {
     throw new Error("Width and height required when no image_path provided");
   }
 
+  targetWidth = Math.round(targetWidth);
+  targetHeight = Math.round(targetHeight);
+
   canvas.width = targetWidth;
   canvas.height = targetHeight;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
 
   if (!only_overlay) {
     if (!sourceImage) {
@@ -211,31 +216,34 @@ function drawCalendar(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, 
     // 日历配置
     const safeArea = calculateSafeArea(canvas.width, canvas.height, targetRatio);
     const scale = safeArea.visibleHeight / 1080;
+    const scaled = (value: number, min = 0) => Math.max(min, Math.round(value * scale));
 
-    const boxW = 320 * scale;
+    const boxW = scaled(320);
     const boxX = safeArea.right - boxW;
     const boxY = safeArea.top;
 
     // 0. 绘制右上角阴影增强对比度
-    const topGradient = ctx.createLinearGradient(0, boxY, 0, boxY + 200 * scale);
+    const topGradient = ctx.createLinearGradient(0, boxY, 0, boxY + scaled(200));
     topGradient.addColorStop(0, 'rgba(0, 0, 0, 0.4)');
     topGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
     ctx.fillStyle = topGradient;
-    ctx.fillRect(0, 0, canvas.width, boxY + 200 * scale);
+    ctx.fillRect(0, 0, canvas.width, boxY + scaled(200));
     
     // 计算网格和高度
     const firstDay = new Date(year, month - 1, 1).getDay(); // 0-6
     const lastDay = new Date(year, month, 0).getDate();
     const rowCount = Math.ceil((firstDay + lastDay) / 7);
-    const cellH = 40 * scale;
-    const boxH = (110 + rowCount * 40 + 10) * scale; // 动态计算高度
+    const cellH = scaled(40, 24);
+    const weekHeaderY = boxY + scaled(85);
+    const dateStartY = weekHeaderY + scaled(30, 18);
+    const boxH = scaled(110) + rowCount * cellH + scaled(20); // 动态计算高度
 
     // 1. 背景磨砂质感
     ctx.save();
     ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-    ctx.lineWidth = Math.max(1, 1 * scale);
-    const radius = 12 * scale;
+    ctx.lineWidth = Math.max(1, scaled(1));
+    const radius = scaled(12, 6);
     
     ctx.beginPath();
     // @ts-ignore
@@ -256,56 +264,50 @@ function drawCalendar(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, 
     ctx.textAlign = 'left';
     
     // 公历日期 (YYYY年MM月DD日)
-    const dateFontSize = 20 * scale;
+    const dateFontSize = scaled(20, 14);
     ctx.font = `bold ${dateFontSize}px "Segoe UI", Roboto, sans-serif`;
     const dateText = `${year}年${month}月${today}日`;
-    ctx.fillText(dateText, boxX + 18 * scale, boxY + 15 * scale);
+    ctx.fillText(dateText, boxX + scaled(18), boxY + scaled(15));
     
     // 农历日期
     const solar = Solar.fromYmd(year, month, today);
     const lunar = Lunar.fromSolar(solar);
-    const lunarFontSize = 11 * scale;
+    const lunarFontSize = scaled(11, 10);
     ctx.font = `${lunarFontSize}px sans-serif`;
     ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
     const lunarText = `农历 ${lunar.getYearInGanZhi()}${lunar.getYearShengXiao()}年 · ${lunar.getMonthInChinese()}月${lunar.getDayInChinese()}`;
-    ctx.fillText(lunarText, boxX + 18 * scale, boxY + 15 * scale + dateFontSize + 6 * scale);
+    ctx.fillText(lunarText, boxX + scaled(18), boxY + scaled(15) + dateFontSize + scaled(6));
     
     // 3. 星期标题
     const weekDays = ["日", "一", "二", "三", "四", "五", "六"];
-    const cellW = (boxW - 24 * scale) / 7;
-    const startY = boxY + 85 * scale;
+    const cellW = (boxW - scaled(24)) / 7;
     
-    ctx.font = `bold ${12 * scale}px sans-serif`;
+    ctx.font = `bold ${scaled(12, 10)}px sans-serif`;
     ctx.textAlign = 'center';
     weekDays.forEach((day, i) => {
       ctx.fillStyle = (i === 0 || i === 6) ? 'rgba(255, 120, 120, 1)' : 'rgba(255, 255, 255, 0.5)';
-      ctx.fillText(day, boxX + 12 * scale + i * cellW + cellW / 2, startY);
+      ctx.fillText(day, Math.round(boxX + scaled(12) + i * cellW + cellW / 2), weekHeaderY);
     });
     
     // 4. 计算本月日期网格
-    const dateStartY = startY + 25 * scale;
-    
     for (let i = 1; i <= lastDay; i++) {
       const dayIdx = i + firstDay - 1;
       const row = Math.floor(dayIdx / 7);
       const col = dayIdx % 7;
       
-      const x = boxX + 12 * scale + col * cellW + cellW / 2;
-      const y = dateStartY + row * cellH;
+      const x = Math.round(boxX + scaled(12) + col * cellW + cellW / 2);
+      const y = Math.round(dateStartY + row * cellH);
+      const numberY = y - scaled(1);
+      const subTextY = y + scaled(13);
       
       // 是否是今天
       const isToday = i === today;
       if (isToday) {
         ctx.save();
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
         ctx.beginPath();
-        // @ts-ignore
-        if (ctx.roundRect) {
-          // @ts-ignore
-          ctx.roundRect(x - cellW/2.2, y - cellH/2.2, cellW/1.1, cellH/1.1, 6 * scale);
-        } else {
-          ctx.arc(x, y, 16 * scale, 0, Math.PI * 2);
-        }
+        const badgeRadius = Math.max(scaled(13), Math.floor(Math.min(cellW, cellH) * 0.32));
+        ctx.arc(x, numberY, badgeRadius, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       }
@@ -334,17 +336,17 @@ function drawCalendar(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, 
         }
         
         // 渲染公历
-        ctx.font = `bold ${16 * scale}px sans-serif`;
+        ctx.font = `bold ${scaled(16, 12)}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = isToday ? 'white' : 'rgba(255, 255, 255, 0.9)';
         if (holidayMark === "休" && !isToday) {
             ctx.fillStyle = 'rgba(255, 150, 150, 1)';
         }
-        ctx.fillText(i.toString(), x, y - 2 * scale);
+        ctx.fillText(i.toString(), x, numberY);
         
         // 渲染农历或节气或节日
-        ctx.font = `${9 * scale}px sans-serif`;
+        ctx.font = `${scaled(9, 8)}px sans-serif`;
         let subText = lunar.getDayInChinese();
         
         // 优先级：法定节日 > 节气 > 农历日期
@@ -366,21 +368,21 @@ function drawCalendar(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, 
         if (holidayMark === "休" && !isToday) {
             ctx.fillStyle = 'rgba(255, 150, 150, 0.7)';
         }
-        ctx.fillText(subText, x, y + 13 * scale);
+        ctx.fillText(subText, x, subTextY);
         
         // 渲染“休/班”标记
         if (holidayMark) {
           ctx.save();
-          ctx.font = `bold ${8 * scale}px sans-serif`;
-          const markX = x + cellW/2.8;
-          const markY = y - cellH/2.8;
+          ctx.font = `bold ${scaled(8, 7)}px sans-serif`;
+          const markX = Math.round(x + cellW / 2.8);
+          const markY = Math.round(y - cellH / 2.8);
           ctx.fillStyle = holidayMark === "休" ? 'rgba(255, 80, 80, 0.9)' : 'rgba(100, 255, 100, 0.9)';
-          ctx.fillText(holidayMark, markX, markY + 8 * scale);
+          ctx.fillText(holidayMark, markX, markY + scaled(8));
           ctx.restore();
         }
       } catch (err) {
         // 如果 lunar 报错，至少渲染公历
-        ctx.font = `bold ${16 * scale}px sans-serif`;
+        ctx.font = `bold ${scaled(16, 12)}px sans-serif`;
         ctx.fillStyle = 'white';
         ctx.fillText(i.toString(), x, y);
       }
