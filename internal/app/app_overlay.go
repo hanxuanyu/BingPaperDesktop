@@ -170,6 +170,12 @@ func logOverlayImageInfo(absPath, kind string, requestedW, requestedH int, targe
 		status = "cache-hit"
 	}
 
+	actualRatio := 0.0
+	if cfg.Height > 0 {
+		actualRatio = float64(cfg.Width) / float64(cfg.Height)
+	}
+	ratioDelta := actualRatio - targetRatio
+
 	slog.Info("Overlay image ready",
 		"kind", kind,
 		"status", status,
@@ -178,6 +184,8 @@ func logOverlayImageInfo(absPath, kind string, requestedW, requestedH int, targe
 		"requestedSize", fmt.Sprintf("%dx%d", requestedW, requestedH),
 		"actualSize", fmt.Sprintf("%dx%d", cfg.Width, cfg.Height),
 		"targetRatio", targetRatio,
+		"actualRatio", actualRatio,
+		"ratioDelta", ratioDelta,
 	)
 }
 

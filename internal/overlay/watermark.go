@@ -123,9 +123,14 @@ func Composite(backgroundPath string, overlays []string, destPath string) error 
 	// We'll use imaging.Overlay to stack layers.
 	result := bgImg
 	bgBounds := result.Bounds()
+	bgRatio := 0.0
+	if bgBounds.Dy() > 0 {
+		bgRatio = float64(bgBounds.Dx()) / float64(bgBounds.Dy())
+	}
 	slog.Info("Composite started",
 		"background", backgroundPath,
 		"backgroundSize", fmt.Sprintf("%dx%d", bgBounds.Dx(), bgBounds.Dy()),
+		"backgroundRatio", bgRatio,
 		"overlayCount", len(overlays),
 		"dest", destPath,
 	)
@@ -144,10 +149,21 @@ func Composite(backgroundPath string, overlays []string, destPath string) error 
 		ovBounds := ovImg.Bounds()
 		offsetX := (bgBounds.Dx() - ovBounds.Dx()) / 2
 		offsetY := (bgBounds.Dy() - ovBounds.Dy()) / 2
+		currentBgRatio := 0.0
+		if bgBounds.Dy() > 0 {
+			currentBgRatio = float64(bgBounds.Dx()) / float64(bgBounds.Dy())
+		}
+		overlayRatio := 0.0
+		if ovBounds.Dy() > 0 {
+			overlayRatio = float64(ovBounds.Dx()) / float64(ovBounds.Dy())
+		}
 
 		slog.Info("Composite overlay applied",
 			"overlay", overlayPath,
 			"overlaySize", fmt.Sprintf("%dx%d", ovBounds.Dx(), ovBounds.Dy()),
+			"overlayRatio", overlayRatio,
+			"backgroundRatio", currentBgRatio,
+			"ratioDelta", overlayRatio-currentBgRatio,
 			"offset", fmt.Sprintf("(%d,%d)", offsetX, offsetY),
 		)
 		result = imaging.Overlay(result, ovImg, image.Pt(offsetX, offsetY), 1.0)
@@ -158,9 +174,14 @@ func Composite(backgroundPath string, overlays []string, destPath string) error 
 	}
 
 	finalBounds := result.Bounds()
+	finalRatio := 0.0
+	if finalBounds.Dy() > 0 {
+		finalRatio = float64(finalBounds.Dx()) / float64(finalBounds.Dy())
+	}
 	slog.Info("Composite finished",
 		"dest", destPath,
 		"finalSize", fmt.Sprintf("%dx%d", finalBounds.Dx(), finalBounds.Dy()),
+		"finalRatio", finalRatio,
 	)
 	return nil
 }

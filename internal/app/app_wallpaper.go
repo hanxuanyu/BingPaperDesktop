@@ -128,6 +128,21 @@ func (a *App) ApplyHistoryToMonitor(key string, monitorID int, screenW, screenH 
 		absOriginalPath := filepath.Join(store.GetBaseDir(), target.ImagePath)
 		currentKey := a.monitorWallpapers[m.ID]
 		sameImage := (currentKey == target.Key)
+		monitorRatio := 0.0
+		if m.Height > 0 {
+			monitorRatio = float64(m.Width) / float64(m.Height)
+		}
+
+		slog.Info("ApplyHistory target prepared",
+			"monitorID", m.ID,
+			"monitorName", m.Name,
+			"monitorSize", fmt.Sprintf("%dx%d", m.Width, m.Height),
+			"monitorRatio", monitorRatio,
+			"historyKey", target.Key,
+			"originalWallpaper", absOriginalPath,
+			"overlayMetadata", cfg.OverlayMetadata,
+			"enableCalendar", cfg.EnableCalendar,
+		)
 
 		if sameImage {
 			if !cfg.OverlayMetadata && !cfg.EnableCalendar {
@@ -219,17 +234,26 @@ func (a *App) prepareWallpaperForMonitor(target *store.HistoryItem, m wallpaper.
 		renderH = 1080
 	}
 
+	renderRatio := float64(renderW) / float64(renderH)
+
 	slog.Info("Preparing wallpaper for monitor",
 		"monitorID", m.ID,
 		"monitorName", m.Name,
 		"renderSize", fmt.Sprintf("%dx%d", renderW, renderH),
+		"renderRatio", renderRatio,
 		"overlayMetadata", cfg.OverlayMetadata,
 		"enableCalendar", cfg.EnableCalendar,
 		"imagePath", target.ImagePath,
+		"originalWallpaper", absOriginalPath,
 	)
 
 	showOverlay := cfg.OverlayMetadata || cfg.EnableCalendar
 	if !showOverlay {
+		slog.Info("Wallpaper selected (no overlay)",
+			"monitorID", m.ID,
+			"path", absOriginalPath,
+			"renderRatio", renderRatio,
+		)
 		return absOriginalPath, nil
 	}
 
@@ -271,8 +295,20 @@ func (a *App) prepareWallpaperForMonitor(target *store.HistoryItem, m wallpaper.
 		if compositeErr := overlay.Composite(absOriginalPath, overlays, tempWallpaperPath); compositeErr != nil {
 			return "", fmt.Errorf("failed to composite image: %w", compositeErr)
 		}
+		slog.Info("Wallpaper selected (composited)",
+			"monitorID", m.ID,
+			"path", tempWallpaperPath,
+			"baseWallpaper", absOriginalPath,
+			"overlayCount", len(overlays),
+			"renderRatio", renderRatio,
+		)
 		return tempWallpaperPath, nil
 	}
 
+	slog.Info("Wallpaper selected (fallback original)",
+		"monitorID", m.ID,
+		"path", absOriginalPath,
+		"renderRatio", renderRatio,
+	)
 	return absOriginalPath, nil
 }
