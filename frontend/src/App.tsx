@@ -9,6 +9,7 @@ import {
   GetConfig, 
   SaveConfig, 
   FetchToday, 
+  FetchHistoryByDays,
   ListHistory, 
   ApplyHistory, 
   ApplyHistoryToMonitor,
@@ -36,6 +37,17 @@ import { WallpaperInfo } from './components/WallpaperInfo';
 import { ResetDialog } from './components/ResetDialog';
 import { MonitorSwitcher } from './components/MonitorSwitcher';
 
+type HistoryFetchProgress = {
+  total: number;
+  completed: number;
+  success: number;
+  skipped: number;
+  failed: number;
+  current_date?: string;
+  status?: string;
+  message?: string;
+};
+
 function App() {
   const [config, setConfig] = useState<store.Config | null>(null);
   const [currentImage, setCurrentImage] = useState<store.HistoryItem | null>(null);
@@ -49,8 +61,10 @@ function App() {
   const [platform, setPlatform] = useState<string>('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
+  const [historyFetchProgress, setHistoryFetchProgress] = useState<HistoryFetchProgress | null>(null);
   const isManualFetching = useRef(false);
   const configRef = useRef<store.Config | null>(null);
+  const historyFetchToastIdRef = useRef<string | number | null>(null);
 
   // Sync config to ref for event listeners
   useEffect(() => {
@@ -170,10 +184,32 @@ function App() {
       }
     });
 
+    const unregisterHistoryProgress = EventsOn('history-fetch-progress', (payload: any) => {
+      const progress: HistoryFetchProgress = {
+        total: Number(payload?.total || 0),
+        completed: Number(payload?.completed || 0),
+        success: Number(payload?.success || 0),
+        skipped: Number(payload?.skipped || 0),
+        failed: Number(payload?.failed || 0),
+        current_date: payload?.current_date || '',
+        status: payload?.status || '',
+        message: payload?.message || ''
+      };
+      setHistoryFetchProgress(progress.total > 0 ? progress : null);
+
+      if (historyFetchToastIdRef.current) {
+        toast.loading(
+          `历史壁纸拉取中 ${progress.completed}/${progress.total}（新增${progress.success}，跳过${progress.skipped}，失败${progress.failed}）`,
+          { id: historyFetchToastIdRef.current }
+        );
+      }
+    });
+
     return () => {
       unregister();
       unregisterSync();
       unregisterShow();
+      unregisterHistoryProgress();
       window.removeEventListener('focus', handleFocus);
     };
   }, []);
@@ -304,6 +340,48 @@ function App() {
     }
   };
 
+  const handleFetchHistoryByDays = async (days: number, customApiUrl: string) => {
+    setLoading(true);
+    setHistoryFetchProgress({
+      total: days,
+      completed: 0,
+      success: 0,
+      skipped: 0,
+      failed: 0
+    });
+    const tid = toast.loading(`历史壁纸拉取中 0/${days}`);
+    historyFetchToastIdRef.current = tid;
+
+    try {
+      const result = await FetchHistoryByDays(
+        days,
+        window.screen.width,
+        window.screen.height,
+        window.devicePixelRatio,
+        customApiUrl || ''
+      );
+      await loadHistory();
+
+      const success = result?.['success'] || 0;
+      const skipped = result?.['skipped'] || 0;
+      const failed = result?.['failed'] || 0;
+      const requested = result?.['requested'] || days;
+
+      if ((success > 0 || skipped > 0) && failed === 0) {
+        toast.success(`拉取完成：新增 ${success} 天，跳过 ${skipped} 天`, { id: tid });
+      } else if (success > 0 || skipped > 0) {
+        toast.warning(`拉取完成：新增 ${success} 天，跳过 ${skipped} 天，失败 ${failed} 天`, { id: tid });
+      } else {
+        toast.error(`拉取失败：共 ${requested} 天，失败 ${failed} 天`, { id: tid });
+      }
+    } catch (err) {
+      toast.error('获取历史壁纸失败: ' + err, { id: tid });
+    } finally {
+      setLoading(false);
+      historyFetchToastIdRef.current = null;
+    }
+  };
+
   const onResetConfirm = async (onlySettings: boolean) => {
     setIsResetDialogOpen(false);
     const tid = toast.loading(onlySettings ? '正在重置应用配置...' : '正在重置应用并清理数据...');
@@ -378,6 +456,8 @@ function App() {
             config={config}
             platform={platform}
             onSaveConfig={handleSaveConfig}
+            onFetchHistory={handleFetchHistoryByDays}
+            historyFetchProgress={historyFetchProgress}
             onCleanup={handleCleanup}
             onCleanupLogs={handleCleanupLogs}
             onReset={() => setIsResetDialogOpen(true)}
