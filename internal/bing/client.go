@@ -7,7 +7,9 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
+	pathpkg "path"
 	"strconv"
 	"strings"
 	"time"
@@ -124,6 +126,50 @@ func FetchMeta(apiType, url string) (*Meta, error) {
 	meta.Date = util.NormalizeDate(meta.Date)
 	slog.Debug("Fetched meta from custom API", "title", meta.Title, "date", meta.Date)
 	return &meta, nil
+}
+
+// BuildDateMetaURL converts a BingPaper "today/meta" URL into a date-specific endpoint:
+// .../date/YYYY-MM-DD/meta
+func BuildDateMetaURL(todayMetaURL, date string) (string, error) {
+	raw := strings.TrimSpace(todayMetaURL)
+	if raw == "" {
+		return "", fmt.Errorf("custom api url is empty")
+	}
+
+	normalizedDate := util.NormalizeDate(strings.TrimSpace(date))
+	if _, err := time.Parse("2006-01-02", normalizedDate); err != nil {
+		return "", fmt.Errorf("invalid date %q: %w", date, err)
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("invalid custom api url %q: %w", raw, err)
+	}
+	if u.Scheme == "" || u.Host == "" {
+		return "", fmt.Errorf("invalid custom api url %q", raw)
+	}
+
+	p := strings.TrimSuffix(u.Path, "/")
+	switch {
+	case strings.HasSuffix(p, "/today/meta"):
+		p = strings.TrimSuffix(p, "/today/meta")
+	case strings.HasSuffix(p, "/today"):
+		p = strings.TrimSuffix(p, "/today")
+	case strings.HasSuffix(p, "/meta"):
+		p = strings.TrimSuffix(p, "/meta")
+	}
+	u.Path = pathpkg.Join(p, "date", normalizedDate, "meta")
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String(), nil
+}
+
+func FetchMetaByDate(todayMetaURL, date string) (*Meta, error) {
+	urlByDate, err := BuildDateMetaURL(todayMetaURL, date)
+	if err != nil {
+		return nil, err
+	}
+	return FetchMeta("custom", urlByDate)
 }
 
 // SelectVariant chooses the best variant based on screen size/aspect.

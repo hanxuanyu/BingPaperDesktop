@@ -26,6 +26,8 @@ export function ClearHistory():Promise<void>;
 
 export function DeleteHistory(arg1:string):Promise<void>;
 
+export function FetchHistoryByDays(arg1:number,arg2:number,arg3:number,arg4:number,arg5:string):Promise<Record<string, number>>;
+
 export function FetchToday(arg1:number,arg2:number,arg3:number):Promise<app.CurrentResult>;
 
 export function GetBaseDir():Promise<string>;

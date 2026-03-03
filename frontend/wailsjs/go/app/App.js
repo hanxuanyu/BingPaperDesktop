@@ -42,6 +42,10 @@ export function DeleteHistory(arg1) {
   return window['go']['app']['App']['DeleteHistory'](arg1);
 }
 
+export function FetchHistoryByDays(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['FetchHistoryByDays'](arg1, arg2, arg3, arg4, arg5);
+}
+
 export function FetchToday(arg1, arg2, arg3) {
   return window['go']['app']['App']['FetchToday'](arg1, arg2, arg3);
 }
