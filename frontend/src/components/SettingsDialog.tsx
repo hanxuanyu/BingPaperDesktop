@@ -70,6 +70,8 @@ export function SettingsDialog({
   const [currentBaseDir, setCurrentBaseDir] = useState<string>('');
   const [historyDays, setHistoryDays] = useState<number>(30);
   const [fetchingHistory, setFetchingHistory] = useState(false);
+  const [cleanupConfirmOpen, setCleanupConfirmOpen] = useState(false);
+  const [cleanupSubmitting, setCleanupSubmitting] = useState(false);
 
   useEffect(() => {
     if (open && initialConfig) {
@@ -102,6 +104,44 @@ export function SettingsDialog({
     } finally {
       setFetchingHistory(false);
     }
+  };
+
+  const normalizeRetainDays = (value: unknown) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return 0;
+    }
+    return Math.floor(parsed);
+  };
+
+  const handleConfirmCleanup = async () => {
+    if (!localConfig || cleanupSubmitting) return;
+    const nextConfig = {
+      ...localConfig,
+      retain_days: normalizeRetainDays(localConfig.retain_days),
+    };
+    setCleanupSubmitting(true);
+    try {
+      setLocalConfig(nextConfig);
+      await onSaveConfig(nextConfig, false);
+      await onCleanup();
+      setCleanupConfirmOpen(false);
+    } finally {
+      setCleanupSubmitting(false);
+    }
+  };
+
+  const handleCleanupClick = async () => {
+    if (!localConfig) return;
+    const retainDays = normalizeRetainDays(localConfig.retain_days);
+    if (retainDays !== localConfig.retain_days) {
+      setLocalConfig({ ...localConfig, retain_days: retainDays });
+    }
+    if (retainDays === 0) {
+      await onCleanup();
+      return;
+    }
+    setCleanupConfirmOpen(true);
   };
 
   return (
@@ -282,9 +322,9 @@ export function SettingsDialog({
                             min={0}
                             className="w-[100px]"
                             value={localConfig.retain_days} 
-                            onChange={(e) => setLocalConfig({ ...localConfig, retain_days: parseInt(e.target.value) })}
+                            onChange={(e) => setLocalConfig({ ...localConfig, retain_days: normalizeRetainDays(e.target.value) })}
                           />
-                          <Button variant="outline" size="sm" onClick={onCleanup}>
+                          <Button variant="outline" size="sm" onClick={handleCleanupClick}>
                             立即清理
                           </Button>
                         </div>
@@ -492,6 +532,29 @@ export function SettingsDialog({
                 <Button onClick={() => onSaveConfig(localConfig, true)}>保存配置</Button>
               </div>
             </DialogFooter>
+
+            <Dialog open={cleanupConfirmOpen} onOpenChange={setCleanupConfirmOpen}>
+              <DialogContent className="sm:max-w-[420px]">
+                <DialogHeader>
+                  <DialogTitle>保存并执行清理？</DialogTitle>
+                </DialogHeader>
+                <div className="text-sm text-muted-foreground">
+                  检测到当前设置可能尚未保存。是否先保存当前配置，再执行清理任务？
+                </div>
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => setCleanupConfirmOpen(false)}
+                    disabled={cleanupSubmitting}
+                  >
+                    取消
+                  </Button>
+                  <Button onClick={handleConfirmCleanup} disabled={cleanupSubmitting}>
+                    {cleanupSubmitting ? '执行中...' : '确认并清理'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </>
         )}
       </DialogContent>
