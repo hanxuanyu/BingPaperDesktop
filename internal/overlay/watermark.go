@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/disintegration/imaging"
 	"golang.org/x/image/font"
@@ -114,7 +115,10 @@ func wrapText(text string, maxChars int) []string {
 }
 
 func Composite(backgroundPath string, overlays []string, destPath string) error {
+	totalStart := time.Now()
+	openBackgroundStart := time.Now()
 	bgImg, err := imaging.Open(backgroundPath)
+	openBackgroundDuration := time.Since(openBackgroundStart)
 	if err != nil {
 		return err
 	}
@@ -133,15 +137,19 @@ func Composite(backgroundPath string, overlays []string, destPath string) error 
 		"backgroundRatio", bgRatio,
 		"overlayCount", len(overlays),
 		"dest", destPath,
+		"openBackgroundDuration", openBackgroundDuration,
 	)
 
-	for _, overlayPath := range overlays {
+	for i, overlayPath := range overlays {
+		overlayStart := time.Now()
 		if overlayPath == "" {
 			continue
 		}
+		openOverlayStart := time.Now()
 		ovImg, err := imaging.Open(overlayPath)
+		openOverlayDuration := time.Since(openOverlayStart)
 		if err != nil {
-			slog.Warn("Composite skipped overlay: failed to open", "overlay", overlayPath, "error", err)
+			slog.Warn("Composite skipped overlay: failed to open", "overlayIndex", i, "overlay", overlayPath, "duration", openOverlayDuration, "error", err)
 			continue
 		}
 
@@ -151,6 +159,7 @@ func Composite(backgroundPath string, overlays []string, destPath string) error 
 		resized := false
 
 		if ovBounds.Dx() != bgBounds.Dx() || ovBounds.Dy() != bgBounds.Dy() {
+			resizeStart := time.Now()
 			// Keep proportions as much as possible; fill canvas when aspect ratios differ.
 			if ovBounds.Dy() > 0 && bgBounds.Dy() > 0 {
 				ovRatio := float64(ovBounds.Dx()) / float64(ovBounds.Dy())
@@ -164,7 +173,18 @@ func Composite(backgroundPath string, overlays []string, destPath string) error 
 				preparedOverlay = imaging.Resize(ovImg, bgBounds.Dx(), bgBounds.Dy(), imaging.Lanczos)
 			}
 			resized = true
+			slog.Info("Composite overlay resize finished",
+				"overlayIndex", i,
+				"overlay", overlayPath,
+				"fromSize", fmt.Sprintf("%dx%d", ovBounds.Dx(), ovBounds.Dy()),
+				"toSize", fmt.Sprintf("%dx%d", bgBounds.Dx(), bgBounds.Dy()),
+				"duration", time.Since(resizeStart),
+			)
 		}
+
+		applyStart := time.Now()
+		result = imaging.Overlay(result, preparedOverlay, image.Pt(0, 0), 1.0)
+		applyDuration := time.Since(applyStart)
 
 		finalOvBounds := preparedOverlay.Bounds()
 		currentBgRatio := 0.0
@@ -184,13 +204,17 @@ func Composite(backgroundPath string, overlays []string, destPath string) error 
 			"ratioDelta", overlayRatio-currentBgRatio,
 			"resizedToBackground", resized,
 			"offset", "(0,0)",
+			"openOverlayDuration", openOverlayDuration,
+			"applyDuration", applyDuration,
+			"overlayTotalDuration", time.Since(overlayStart),
 		)
-		result = imaging.Overlay(result, preparedOverlay, image.Pt(0, 0), 1.0)
 	}
 
+	saveStart := time.Now()
 	if err := imaging.Save(result, destPath, imaging.JPEGQuality(95)); err != nil {
 		return err
 	}
+	saveDuration := time.Since(saveStart)
 
 	finalBounds := result.Bounds()
 	finalRatio := 0.0
@@ -201,6 +225,8 @@ func Composite(backgroundPath string, overlays []string, destPath string) error 
 		"dest", destPath,
 		"finalSize", fmt.Sprintf("%dx%d", finalBounds.Dx(), finalBounds.Dy()),
 		"finalRatio", finalRatio,
+		"saveDuration", saveDuration,
+		"totalDuration", time.Since(totalStart),
 	)
 	return nil
 }

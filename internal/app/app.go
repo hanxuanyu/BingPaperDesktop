@@ -43,15 +43,17 @@ type App struct {
 	fetchMu           sync.Mutex
 	mu                sync.RWMutex // 保护 lastFetch 和其他共享状态
 	lastFetch         *CurrentResult
-	wmChan            chan string
+	wmChan            chan OverlayRenderResult
 	wmMu              sync.Mutex
 	monitorWallpapers map[int]string
 }
 
 type OverlayRequest struct {
+	RequestID       string             `json:"request_id"`
 	ImagePath       string             `json:"image_path"`
 	Title           string             `json:"title"`
 	Date            string             `json:"date"`
+	CalendarDate    string             `json:"calendar_date"`
 	Copyright       string             `json:"copyright"`
 	Variant         string             `json:"variant"`
 	EnableWatermark bool               `json:"enable_watermark"`
@@ -61,6 +63,31 @@ type OverlayRequest struct {
 	Width           int                `json:"width"`
 	Height          int                `json:"height"`
 	TargetRatio     float64            `json:"target_ratio"` // 目标屏幕比例 (如 1.777, 1.333)
+}
+
+type OverlayRenderMetrics struct {
+	RequestID        string  `json:"request_id"`
+	TotalMs          float64 `json:"total_ms"`
+	SetupMs          float64 `json:"setup_ms"`
+	ImageLoadMs      float64 `json:"image_load_ms"`
+	DrawWatermarkMs  float64 `json:"draw_watermark_ms"`
+	DrawCalendarMs   float64 `json:"draw_calendar_ms"`
+	EncodeMs         float64 `json:"encode_ms"`
+	Width            int     `json:"width"`
+	Height           int     `json:"height"`
+	PixelCount       int     `json:"pixel_count"`
+	DataURLBytes     int     `json:"data_url_bytes"`
+	OnlyOverlay      bool    `json:"only_overlay"`
+	EnableWatermark  bool    `json:"enable_watermark"`
+	EnableCalendar   bool    `json:"enable_calendar"`
+	HasHolidayData   bool    `json:"has_holiday_data"`
+	HolidayDataCount int     `json:"holiday_data_count"`
+}
+
+type OverlayRenderResult struct {
+	RequestID  string               `json:"request_id"`
+	Base64Data string               `json:"base64_data"`
+	Metrics    OverlayRenderMetrics `json:"metrics"`
 }
 
 type CurrentResult struct {
@@ -74,7 +101,7 @@ func NewApp() *App {
 		// wmChan 容量为 1：避免前端 JS 回调在 Go select 就绪之前发送数据时被丢弃。
 		// 场景：Go 通过 EventsEmit 触发前端渲染，前端完成后调用 SubmitWatermark。
 		// 若 JS 微任务先于 Go goroutine 的 select 就绪，无缓冲 channel 会使数据无声丢失。
-		wmChan:            make(chan string, 1),
+		wmChan:            make(chan OverlayRenderResult, 1),
 		monitorWallpapers: make(map[int]string),
 	}
 	a.sched = scheduler.New(func() error {

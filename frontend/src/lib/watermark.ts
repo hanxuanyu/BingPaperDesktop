@@ -1,12 +1,33 @@
 import { Solar, Lunar, HolidayUtil } from 'lunar-javascript';
 
 export async function renderWatermark(data: any): Promise<string> {
+  const totalStart = performance.now();
   const { 
-    image_path, title, date, copyright, variant, 
+    request_id, image_path, title, date, calendar_date, copyright, variant,
     enable_watermark, enable_calendar, holiday_data,
     only_overlay, width, height, target_ratio
   } = data;
 
+  const metrics = {
+    request_id: request_id || '',
+    total_ms: 0,
+    setup_ms: 0,
+    image_load_ms: 0,
+    draw_watermark_ms: 0,
+    draw_calendar_ms: 0,
+    encode_ms: 0,
+    width: 0,
+    height: 0,
+    pixel_count: 0,
+    data_url_bytes: 0,
+    only_overlay: Boolean(only_overlay),
+    enable_watermark: Boolean(enable_watermark),
+    enable_calendar: Boolean(enable_calendar),
+    has_holiday_data: Array.isArray(holiday_data) && holiday_data.length > 0,
+    holiday_data_count: Array.isArray(holiday_data) ? holiday_data.length : 0
+  };
+
+  const setupStart = performance.now();
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Could not get canvas context');
@@ -17,6 +38,7 @@ export async function renderWatermark(data: any): Promise<string> {
 
   const needSourceImage = Boolean(image_path) && (!only_overlay || !targetWidth || !targetHeight);
   if (needSourceImage) {
+    const imageLoadStart = performance.now();
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.src = image_path;
@@ -29,6 +51,7 @@ export async function renderWatermark(data: any): Promise<string> {
     sourceImage = img;
     if (!targetWidth) targetWidth = img.width;
     if (!targetHeight) targetHeight = img.height;
+    metrics.image_load_ms = performance.now() - imageLoadStart;
   }
 
   if (!targetWidth || !targetHeight) {
@@ -42,6 +65,10 @@ export async function renderWatermark(data: any): Promise<string> {
   canvas.height = targetHeight;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
+  metrics.width = targetWidth;
+  metrics.height = targetHeight;
+  metrics.pixel_count = targetWidth * targetHeight;
+  metrics.setup_ms = performance.now() - setupStart;
 
   if (!only_overlay) {
     if (!sourceImage) {
@@ -53,15 +80,29 @@ export async function renderWatermark(data: any): Promise<string> {
 
   // 1. Draw Watermark if enabled
   if (enable_watermark) {
+    const drawStart = performance.now();
     drawWatermark(ctx, canvas, title, date, copyright, variant, target_ratio);
+    metrics.draw_watermark_ms = performance.now() - drawStart;
   }
 
   // 2. Draw Calendar if enabled
   if (enable_calendar) {
-    drawCalendar(ctx, canvas, date, holiday_data, target_ratio);
+    const drawStart = performance.now();
+    drawCalendar(ctx, canvas, calendar_date || date, holiday_data, target_ratio);
+    metrics.draw_calendar_ms = performance.now() - drawStart;
   }
 
-  return canvas.toDataURL(only_overlay ? 'image/png' : 'image/jpeg', only_overlay ? undefined : 0.95);
+  const encodeStart = performance.now();
+  const base64Data = canvas.toDataURL(only_overlay ? 'image/png' : 'image/jpeg', only_overlay ? undefined : 0.95);
+  metrics.encode_ms = performance.now() - encodeStart;
+  metrics.data_url_bytes = base64Data.length;
+  metrics.total_ms = performance.now() - totalStart;
+
+  return JSON.stringify({
+    request_id: request_id || '',
+    base64_data: base64Data,
+    metrics
+  });
 }
 
 function calculateSafeArea(width: number, height: number, targetRatio?: number) {
@@ -100,25 +141,28 @@ function calculateSafeArea(width: number, height: number, targetRatio?: number) 
   };
 }
 
+function roundedRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, radius: number) {
+  ctx.beginPath();
+  const roundRect = (ctx as CanvasRenderingContext2D & { roundRect?: (x: number, y: number, w: number, h: number, radii: number) => void }).roundRect;
+  if (roundRect) {
+    roundRect.call(ctx, x, y, w, h, radius);
+  } else {
+    ctx.rect(x, y, w, h);
+  }
+}
+
 function drawWatermark(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, title: string, date: string, copyright: string, variant: string, targetRatio?: number) {
   const safeArea = calculateSafeArea(canvas.width, canvas.height, targetRatio);
   
-  const titleFontSize = Math.max(24, Math.floor(safeArea.visibleHeight * 0.045));
-  const copyrightFontSize = Math.max(14, Math.floor(safeArea.visibleHeight * 0.018));
-  const tagFontSize = Math.max(12, Math.floor(safeArea.visibleHeight * 0.015));
-
-  // Draw bottom gradient (可选，覆盖整个宽度还是仅可见区域？覆盖整个宽度比较保险)
-  const gradient = ctx.createLinearGradient(0, canvas.height - safeArea.visibleHeight * 0.3, 0, canvas.height);
-  gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  gradient.addColorStop(1, 'rgba(0, 0, 0, 0.6)');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, canvas.height - safeArea.visibleHeight * 0.3, canvas.width, safeArea.visibleHeight * 0.3);
+  const titleFontSize = Math.max(18, Math.floor(safeArea.visibleHeight * 0.034));
+  const copyrightFontSize = Math.max(11, Math.floor(safeArea.visibleHeight * 0.014));
+  const tagFontSize = Math.max(10, Math.floor(safeArea.visibleHeight * 0.012));
 
   // Reset shadow for text
   ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-  ctx.shadowBlur = 12;
-  ctx.shadowOffsetX = 2;
-  ctx.shadowOffsetY = 2;
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetX = 1;
+  ctx.shadowOffsetY = 1;
 
   // 计算位置（从下往上）
   const tagPaddingV = tagFontSize * 0.3;
@@ -140,7 +184,7 @@ function drawWatermark(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement,
   ctx.fillText(title, rightX, titleY);
 
   // Draw Copyright
-  ctx.shadowBlur = 8;
+  ctx.shadowBlur = 5;
   ctx.font = `${copyrightFontSize}px "Segoe UI", Roboto, "Helvetica Neue", sans-serif`;
   ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
   ctx.fillText(copyright, rightX, copyrightY);
@@ -153,7 +197,7 @@ function drawWatermark(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement,
   
   const tags = [date, variant || "UHD"];
   const tagPaddingH = tagFontSize * 0.8;
-  const tagRadius = 4;
+  const tagRadius = 3;
   let currentTagX = rightX;
 
   // 靠右显示，所以倒序处理标签
@@ -171,15 +215,7 @@ function drawWatermark(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement,
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
     ctx.lineWidth = 1;
     
-    // Rounded rect
-    ctx.beginPath();
-    // @ts-ignore
-    if (ctx.roundRect) {
-      // @ts-ignore
-      ctx.roundRect(rectX, rectY, rectWidth, tagRectHeight, tagRadius);
-    } else {
-      ctx.rect(rectX, rectY, rectWidth, tagRectHeight);
-    }
+    roundedRectPath(ctx, rectX, rectY, rectWidth, tagRectHeight, tagRadius);
     ctx.fill();
     ctx.stroke();
     ctx.restore();
@@ -188,7 +224,7 @@ function drawWatermark(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement,
     ctx.textAlign = 'left';
     ctx.fillText(tag, rectX + tagPaddingH, tagY - tagPaddingV);
     
-    currentTagX -= (rectWidth + 12);
+    currentTagX -= (rectWidth + Math.max(8, Math.round(tagFontSize * 0.75)));
   });
   ctx.restore();
 }
@@ -222,13 +258,6 @@ function drawCalendar(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, 
     const boxX = safeArea.right - boxW;
     const boxY = safeArea.top;
 
-    // 0. 绘制右上角阴影增强对比度
-    const topGradient = ctx.createLinearGradient(0, boxY, 0, boxY + scaled(200));
-    topGradient.addColorStop(0, 'rgba(0, 0, 0, 0.4)');
-    topGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = topGradient;
-    ctx.fillRect(0, 0, canvas.width, boxY + scaled(200));
-    
     // 计算网格和高度
     const firstDay = new Date(year, month - 1, 1).getDay(); // 0-6
     const lastDay = new Date(year, month, 0).getDate();
@@ -240,19 +269,11 @@ function drawCalendar(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, 
 
     // 1. 背景磨砂质感
     ctx.save();
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-    ctx.lineWidth = Math.max(1, scaled(1));
     const radius = scaled(12, 6);
-    
-    ctx.beginPath();
-    // @ts-ignore
-    if (ctx.roundRect) {
-      // @ts-ignore
-      ctx.roundRect(boxX, boxY, boxW, boxH, radius);
-    } else {
-      ctx.rect(boxX, boxY, boxW, boxH);
-    }
+    roundedRectPath(ctx, boxX, boxY, boxW, boxH, radius);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.lineWidth = Math.max(1, scaled(1));
     ctx.fill();
     ctx.stroke();
     ctx.restore();
