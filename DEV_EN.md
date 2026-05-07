@@ -11,7 +11,7 @@ This document is intended for developers and covers the project structure, modul
 | Layer | Technology |
 |-------|------------|
 | Desktop framework | [Wails v2](https://wails.io/) (Go + WebView) |
-| Backend language | Go 1.23 |
+| Backend language | Go 1.26.1 |
 | Frontend framework | React 18 + TypeScript |
 | Frontend build tool | Vite |
 | UI styling | Tailwind CSS + shadcn/ui |
@@ -161,7 +161,7 @@ The primary watermark rendering logic runs in the frontend using HTML Canvas:
 
 | Tool | Minimum Version | Purpose |
 |------|-----------------|---------|
-| [Go](https://go.dev/) | 1.23 | Backend language runtime |
+| [Go](https://go.dev/) | 1.26.1 | Backend language runtime |
 | [Node.js](https://nodejs.org/) | 20 | Frontend build tooling |
 | [Wails CLI](https://wails.io/docs/gettingstarted/installation) | v2 | Project build and dev server |
 

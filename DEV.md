@@ -11,7 +11,7 @@
 | 层级 | 技术 |
 |------|------|
 | 桌面框架 | [Wails v2](https://wails.io/)（Go + WebView） |
-| 后端语言 | Go 1.23 |
+| 后端语言 | Go 1.26.1 |
 | 前端框架 | React 18 + TypeScript |
 | 前端构建 | Vite |
 | UI 样式 | Tailwind CSS + shadcn/ui |
@@ -161,7 +161,7 @@ BingPaperDesktop/
 
 | 工具 | 最低版本 | 用途 |
 |------|----------|------|
-| [Go](https://go.dev/) | 1.23 | 后端语言运行时 |
+| [Go](https://go.dev/) | 1.26.1 | 后端语言运行时 |
 | [Node.js](https://nodejs.org/) | 20 | 前端构建 |
 | [Wails CLI](https://wails.io/docs/gettingstarted/installation) | v2 | 项目构建与开发服务器 |
 

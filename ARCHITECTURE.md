@@ -1,7 +1,7 @@
 # BingPaperDesktop — 架构与实现原理
 
 > 本文档由代码 review 整理而成，面向希望快速理解项目实现原理的开发者。  
-> 技术栈：**Wails v2 + Go 1.23 + React 18 + TypeScript + Tailwind CSS**
+> 技术栈：**Wails v2 + Go 1.26.1 + React 18 + TypeScript + Tailwind CSS**
 
 ---
 
