@@ -72,7 +72,10 @@ func (a *App) FetchToday(screenW, screenH int, dpr float64) (CurrentResult, erro
 		}
 
 		slog.Info("Auto applying wallpaper")
-		_ = a.ApplyHistoryToMonitor(item.Key, -1, realW, realH)
+		if err := a.ApplyHistoryToMonitor(item.Key, -1, realW, realH); err != nil {
+			slog.Error("Auto apply wallpaper failed", "key", item.Key, "error", err)
+			return CurrentResult{Item: item, Error: err.Error()}, err
+		}
 	} else {
 		res := CurrentResult{Item: item, Success: true}
 		a.mu.Lock()

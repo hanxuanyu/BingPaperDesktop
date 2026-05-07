@@ -88,3 +88,5 @@ desktop.ini
 /appsign.md
 /BingPaperDesktop
 package.json.md5
+.gocache/
+.gomodcache/

@@ -135,7 +135,7 @@ Implements four scheduling modes:
 
 - **`config.go`**: JSON config read/write, including auto-migration of legacy config fields; path strategy: portable  standard  custom
 - **`index.go`**: Maintains `index.json` as the wallpaper history list  supports deduplication, date-based sorting, and cleanup by retention days
-- **`holiday.go`**: Downloads and caches the current year's holiday JSON data from GitHub
+- **`holiday.go` / `holiday_embed.go`**: Prefers build-time embedded holiday JSON for the current year and writes it into the local cache; falls back to remote download only when embedded data is missing, stale, or a custom source is configured
 
 ### `internal/wallpaper/`  Wallpaper Setting
 

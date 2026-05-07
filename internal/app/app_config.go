@@ -26,6 +26,7 @@ func (a *App) SaveConfig(cfg store.Config) error {
 	if cfg.IntervalMinutes < 1 {
 		cfg.IntervalMinutes = 1
 	}
+	cfg = store.NormalizeConfig(cfg)
 	oldCfg, _ := store.LoadConfig()
 
 	// 同步开机启动设置
@@ -50,8 +51,8 @@ func (a *App) SaveConfig(cfg store.Config) error {
 			go func() {
 				year := time.Now().Year()
 				force := (!oldCfg.EnableHoliday && cfg.EnableHoliday) || (oldCfg.HolidayApiUrl != cfg.HolidayApiUrl)
-				if err := store.CheckAndDownloadHoliday(year, force); err != nil {
-					slog.Error("Failed to check/download holiday data", "year", year, "error", err, "force", force)
+				if err := store.EnsureHolidayWithConfig(year, cfg, force); err != nil {
+					slog.Error("Failed to ensure holiday data", "year", year, "error", err, "force", force)
 				}
 			}()
 		}

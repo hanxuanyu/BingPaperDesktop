@@ -262,11 +262,12 @@ function App() {
   const handleSaveConfig = async (newCfg: store.Config, closeDialog = false) => {
     try {
       await SaveConfig(newCfg);
+      const savedCfg = await GetConfig();
       
-      const holidaySwitchedOn = !config?.enable_holiday && newCfg.enable_holiday;
-      const holidayUrlChanged = config?.enable_holiday && newCfg.enable_holiday && config?.holiday_api_url !== newCfg.holiday_api_url;
+      const holidaySwitchedOn = !config?.enable_holiday && savedCfg.enable_holiday;
+      const holidayUrlChanged = config?.enable_holiday && savedCfg.enable_holiday && config?.holiday_api_url !== savedCfg.holiday_api_url;
       
-      setConfig(newCfg);
+      setConfig(savedCfg);
       toast.success('配置已保存');
 
       if (holidaySwitchedOn) {

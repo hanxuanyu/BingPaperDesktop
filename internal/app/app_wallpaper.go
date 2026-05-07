@@ -75,9 +75,13 @@ func (a *App) ApplyHistory(key string, screenW, screenH int) error {
 
 func (a *App) ApplyHistoryToMonitor(key string, monitorID int, screenW, screenH int) error {
 	if key == "" {
+		cfg, _ := store.LoadConfig()
 		res, err := a.FetchToday(screenW, screenH, 1.0)
 		if err != nil {
 			return err
+		}
+		if cfg.AutoApply && monitorID < 0 {
+			return nil
 		}
 		key = res.Item.Key
 	}
@@ -122,10 +126,47 @@ func (a *App) ApplyHistoryToMonitor(key string, monitorID int, screenW, screenH 
 		targets = monitors
 	}
 
+	absOriginalPath := filepath.Join(store.GetBaseDir(), target.ImagePath)
+	showOverlay := cfg.OverlayMetadata || cfg.EnableCalendar
+
 	a.mu.Lock()
+	if monitorID < 0 {
+		allSameImage := true
+		for _, m := range targets {
+			if a.monitorWallpapers[m.ID] != target.Key {
+				allSameImage = false
+				break
+			}
+		}
+
+		if !showOverlay || !allSameImage {
+			slog.Debug("Phase 1: Setting original image as wallpaper for all monitors", "path", absOriginalPath)
+			if err := applyWallpaperAll(absOriginalPath); err != nil {
+				slog.Warn("Failed to set wallpaper for all monitors, falling back to per-monitor apply", "error", err)
+				for _, m := range targets {
+					_ = applyWallpaperOnMonitor(m, absOriginalPath)
+				}
+			}
+			for _, m := range targets {
+				a.monitorWallpapers[m.ID] = target.Key
+			}
+
+			a.lastFetch = &CurrentResult{Item: *target, Success: true}
+			monitorState := cloneMonitorWallpapers(a.monitorWallpapers)
+			a.mu.Unlock()
+
+			runtime.EventsEmit(a.ctx, "current-image-changed", *target)
+			runtime.EventsEmit(a.ctx, "monitor-wallpapers-changed", monitorState)
+
+			if showOverlay {
+				a.prepareAndApplyOverlaysAsync(target, targets, cfg, absOriginalPath)
+			}
+			return nil
+		}
+	}
+
 	for _, m := range targets {
 		m := m
-		absOriginalPath := filepath.Join(store.GetBaseDir(), target.ImagePath)
 		currentKey := a.monitorWallpapers[m.ID]
 		sameImage := (currentKey == target.Key)
 		monitorRatio := 0.0
@@ -145,18 +186,9 @@ func (a *App) ApplyHistoryToMonitor(key string, monitorID int, screenW, screenH 
 		)
 
 		if sameImage {
-			if !cfg.OverlayMetadata && !cfg.EnableCalendar {
-				// 两个叠加都关闭：需要把壁纸从合成图换回原图
+			if !showOverlay {
 				slog.Debug("Same image, overlays off: setting original as wallpaper", "id", m.ID, "path", absOriginalPath)
-				if err := wallpaper.SetOnMonitor(m.ID, absOriginalPath); err != nil {
-					if strings.Contains(err.Error(), "IDesktopWallpaper not supported") {
-						_ = wallpaper.Set(absOriginalPath)
-					} else {
-						slog.Error("Failed to set original wallpaper on monitor", "id", m.ID, "error", err)
-						_ = wallpaper.Set(absOriginalPath)
-					}
-				}
-				runtime.EventsEmit(a.ctx, "monitor-wallpapers-changed", a.monitorWallpapers)
+				_ = applyWallpaperOnMonitor(m, absOriginalPath)
 				continue
 			}
 			go func(m wallpaper.Monitor, absOriginal string) {
@@ -169,24 +201,17 @@ func (a *App) ApplyHistoryToMonitor(key string, monitorID int, screenW, screenH 
 					return
 				}
 				slog.Info("Applying composited wallpaper (same image, overlay updated)", "id", m.ID, "path", applyPath)
-				if err := wallpaper.SetOnMonitor(m.ID, applyPath); err != nil {
-					if strings.Contains(err.Error(), "IDesktopWallpaper not supported") {
-						_ = wallpaper.Set(applyPath)
-					} else {
-						slog.Error("Failed to set composited wallpaper on monitor", "id", m.ID, "error", err)
-						_ = wallpaper.Set(applyPath)
-					}
-				}
-				runtime.EventsEmit(a.ctx, "monitor-wallpapers-changed", a.monitorWallpapers)
+				_ = applyWallpaperOnMonitor(m, applyPath)
+				a.emitMonitorWallpapersChanged()
 			}(m, absOriginalPath)
 			continue
 		}
 
 		slog.Debug("Phase 1: Setting original image as wallpaper", "id", m.ID, "path", absOriginalPath)
-		_ = wallpaper.SetOnMonitor(m.ID, absOriginalPath)
+		_ = applyWallpaperOnMonitor(m, absOriginalPath)
 		a.monitorWallpapers[m.ID] = target.Key
 
-		if !cfg.OverlayMetadata && !cfg.EnableCalendar {
+		if !showOverlay {
 			continue
 		}
 
@@ -202,23 +227,17 @@ func (a *App) ApplyHistoryToMonitor(key string, monitorID int, screenW, screenH 
 			}
 
 			slog.Info("Phase 2: Applying composited wallpaper to monitor", "id", m.ID, "path", applyPath)
-			if err := wallpaper.SetOnMonitor(m.ID, applyPath); err != nil {
-				if strings.Contains(err.Error(), "IDesktopWallpaper not supported") {
-					_ = wallpaper.Set(applyPath)
-				} else {
-					slog.Error("Failed to set composited wallpaper on monitor", "id", m.ID, "error", err)
-					_ = wallpaper.Set(applyPath)
-				}
-			}
-			runtime.EventsEmit(a.ctx, "monitor-wallpapers-changed", a.monitorWallpapers)
+			_ = applyWallpaperOnMonitor(m, applyPath)
+			a.emitMonitorWallpapersChanged()
 		}(m, absOriginalPath)
 	}
 
 	a.lastFetch = &CurrentResult{Item: *target, Success: true}
+	monitorState := cloneMonitorWallpapers(a.monitorWallpapers)
 	a.mu.Unlock()
 
 	runtime.EventsEmit(a.ctx, "current-image-changed", *target)
-	runtime.EventsEmit(a.ctx, "monitor-wallpapers-changed", a.monitorWallpapers)
+	runtime.EventsEmit(a.ctx, "monitor-wallpapers-changed", monitorState)
 
 	return nil
 }
@@ -269,8 +288,24 @@ func (a *App) prepareWallpaperForMonitor(target *store.HistoryItem, m wallpaper.
 	}
 
 	var overlays []string
+	combinedOverlayAdded := false
 
-	if cfg.OverlayMetadata {
+	if cfg.OverlayMetadata && cfg.EnableCalendar {
+		dayDir := filepath.Dir(target.ImagePath)
+		tempMeta := &bing.Meta{
+			Date:      target.Date,
+			Title:     target.Title,
+			Copyright: target.Copyright,
+		}
+		tempChosen := bing.Variant{
+			Variant: target.ChosenVariant,
+		}
+		combinedPath := a.ensureCombinedOverlay(tempMeta, tempChosen, dayDir, canvasW, canvasH, renderW, renderH, renderRatio, cfg)
+		if combinedPath != "" {
+			overlays = append(overlays, combinedPath)
+			combinedOverlayAdded = true
+		}
+	} else if cfg.OverlayMetadata {
 		dayDir := filepath.Dir(target.ImagePath)
 		tempMeta := &bing.Meta{
 			Date:      target.Date,
@@ -286,7 +321,7 @@ func (a *App) prepareWallpaperForMonitor(target *store.HistoryItem, m wallpaper.
 		}
 	}
 
-	if cfg.EnableCalendar {
+	if cfg.EnableCalendar && !combinedOverlayAdded {
 		calPath := a.getCalendarOverlay(canvasW, canvasH, renderW, renderH, renderRatio, cfg)
 		if calPath != "" {
 			overlays = append(overlays, calPath)
@@ -322,4 +357,80 @@ func (a *App) prepareWallpaperForMonitor(target *store.HistoryItem, m wallpaper.
 		"renderRatio", renderRatio,
 	)
 	return absOriginalPath, nil
+}
+
+func (a *App) prepareAndApplyOverlaysAsync(target *store.HistoryItem, targets []wallpaper.Monitor, cfg store.Config, absOriginalPath string) {
+	for _, m := range targets {
+		m := m
+		go func() {
+			applyPath, err := a.prepareWallpaperForMonitor(target, m, cfg)
+			if err != nil {
+				slog.Error("Failed to prepare wallpaper for monitor", "id", m.ID, "error", err)
+				return
+			}
+
+			if applyPath == absOriginalPath {
+				return
+			}
+
+			slog.Info("Phase 2: Applying composited wallpaper to monitor", "id", m.ID, "path", applyPath)
+			_ = applyWallpaperOnMonitor(m, applyPath)
+			a.emitMonitorWallpapersChanged()
+		}()
+	}
+}
+
+func (a *App) emitMonitorWallpapersChanged() {
+	a.mu.RLock()
+	snapshot := cloneMonitorWallpapers(a.monitorWallpapers)
+	a.mu.RUnlock()
+
+	runtime.EventsEmit(a.ctx, "monitor-wallpapers-changed", snapshot)
+}
+
+func cloneMonitorWallpapers(src map[int]string) map[int]string {
+	snapshot := make(map[int]string, len(src))
+	for k, v := range src {
+		snapshot[k] = v
+	}
+	return snapshot
+}
+
+func applyWallpaperAll(path string) error {
+	start := time.Now()
+	err := wallpaper.Set(path)
+	duration := time.Since(start)
+	if err != nil {
+		slog.Error("Wallpaper apply finished", "scope", "all", "path", path, "duration", duration, "error", err)
+		return err
+	}
+	slog.Info("Wallpaper apply finished", "scope", "all", "path", path, "duration", duration)
+	return nil
+}
+
+func applyWallpaperOnMonitor(m wallpaper.Monitor, path string) error {
+	start := time.Now()
+	err := wallpaper.SetOnMonitor(m.ID, path)
+	fallback := false
+	if err != nil {
+		fallback = true
+		if strings.Contains(err.Error(), "IDesktopWallpaper not supported") {
+			err = wallpaper.Set(path)
+		} else {
+			slog.Error("Failed to set wallpaper on monitor, trying global fallback", "id", m.ID, "path", path, "error", err)
+			if fallbackErr := wallpaper.Set(path); fallbackErr != nil {
+				err = fmt.Errorf("%w; global fallback failed: %v", err, fallbackErr)
+			} else {
+				err = nil
+			}
+		}
+	}
+
+	duration := time.Since(start)
+	if err != nil {
+		slog.Error("Wallpaper apply finished", "scope", "monitor", "monitorID", m.ID, "monitorName", m.Name, "path", path, "duration", duration, "fallback", fallback, "error", err)
+		return err
+	}
+	slog.Info("Wallpaper apply finished", "scope", "monitor", "monitorID", m.ID, "monitorName", m.Name, "path", path, "duration", duration, "fallback", fallback)
+	return nil
 }

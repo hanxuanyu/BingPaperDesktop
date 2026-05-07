@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 )
 
@@ -175,6 +176,19 @@ func DefaultConfig() Config {
 	}
 }
 
+func NormalizeConfig(cfg Config) Config {
+	cfg.HolidayApiUrl = NormalizeHolidayAPIURL(cfg.HolidayApiUrl)
+	return cfg
+}
+
+func NormalizeHolidayAPIURL(apiURL string) string {
+	apiURL = strings.TrimSpace(apiURL)
+	if apiURL == "" {
+		return DefaultHolidayUrl
+	}
+	return apiURL
+}
+
 func LoadConfig() (Config, error) {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -200,6 +214,12 @@ func LoadConfig() (Config, error) {
 
 	// Migration for older versions
 	migrated := false
+
+	normalizedCfg := NormalizeConfig(cfg)
+	if normalizedCfg != cfg {
+		cfg = normalizedCfg
+		migrated = true
+	}
 
 	// Check if any expected fields are missing in the file
 	var raw map[string]any
@@ -229,11 +249,6 @@ func LoadConfig() (Config, error) {
 		}
 		migrated = true
 	}
-	if cfg.HolidayApiUrl == "" {
-		cfg.HolidayApiUrl = DefaultHolidayUrl
-		migrated = true
-	}
-
 	if migrated {
 		// Save migrated config to avoid re-migration
 		go func(c Config) {
@@ -247,6 +262,7 @@ func LoadConfig() (Config, error) {
 func SaveConfig(cfg Config) error {
 	mu.Lock()
 	defer mu.Unlock()
+	cfg = NormalizeConfig(cfg)
 	return saveConfigLocked(cfg)
 }
 

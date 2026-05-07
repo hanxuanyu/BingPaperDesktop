@@ -62,11 +62,18 @@ func set(path string) error {
 		return err
 	}
 
+	if err := setWithDesktopWallpaper(-1, absPath); err == nil {
+		return nil
+	}
+
+	return setWithSystemParametersInfo(absPath)
+}
+
+func setWithSystemParametersInfo(absPath string) error {
 	ptr, err := syscall.UTF16PtrFromString(absPath)
 	if err != nil {
 		return err
 	}
-
 	ret, _, err := systemParametersInfo.Call(
 		uintptr(spiSetDeskWallpaper),
 		uintptr(uiParam),
@@ -87,6 +94,10 @@ func setOnMonitor(monitorID int, path string) error {
 		return err
 	}
 
+	return setWithDesktopWallpaper(monitorID, absPath)
+}
+
+func setWithDesktopWallpaper(monitorID int, absPath string) error {
 	hr := ole.CoInitializeEx(0, ole.COINIT_APARTMENTTHREADED)
 	if hr != nil {
 		code := hr.(*ole.OleError).Code()
@@ -128,6 +139,19 @@ func setOnMonitor(monitorID int, path string) error {
 
 	wallpaper := (*IDesktopWallpaper)(unsafe.Pointer(unknown))
 
+	pathPtr, err := syscall.UTF16PtrFromString(absPath)
+	if err != nil {
+		return err
+	}
+
+	if monitorID < 0 {
+		retCode, _, _ := syscall.SyscallN(wallpaper.VTable.SetWallpaper, uintptr(unsafe.Pointer(wallpaper)), 0, uintptr(unsafe.Pointer(pathPtr)))
+		if int32(retCode) < 0 {
+			return fmt.Errorf("SetWallpaper failed: %08x", retCode)
+		}
+		return nil
+	}
+
 	// Get monitor ID (GUID or Index)
 	// IDesktopWallpaper uses MonitorID which is a string (GUID or something)
 	// We can get it by index
@@ -148,7 +172,6 @@ func setOnMonitor(monitorID int, path string) error {
 	}
 	defer ole.CoTaskMemFree(uintptr(unsafe.Pointer(monitorIDStr)))
 
-	pathPtr, _ := syscall.UTF16PtrFromString(absPath)
 	retCode, _, _ = syscall.SyscallN(wallpaper.VTable.SetWallpaper, uintptr(unsafe.Pointer(wallpaper)), uintptr(unsafe.Pointer(monitorIDStr)), uintptr(unsafe.Pointer(pathPtr)))
 	if int32(retCode) < 0 {
 		return fmt.Errorf("SetWallpaper failed: %08x", retCode)
