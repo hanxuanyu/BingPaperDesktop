@@ -398,12 +398,12 @@ export function SettingsDialog({
                                 <Label className="text-sm">节假日 API 数据源</Label>
                                 <Input 
                                   className="font-mono text-[0.7rem] h-8"
-                                  placeholder="https://.../yyyy.json"
+                                  placeholder="https://.../{year}.json"
                                   value={localConfig.holiday_api_url || ''} 
                                   onChange={(e) => setLocalConfig({ ...localConfig, holiday_api_url: e.target.value })}
                                 />
                                 <p className="text-[0.65rem] text-muted-foreground italic">
-                                  使用 yyyy 作为年份占位符。默认从 GitHub 获取。
+                                  支持 yyyy、YYYY、{'{year}'} 或 %d 年份占位符；保存后会重新下载当年数据。
                                 </p>
                               </div>
                             )}

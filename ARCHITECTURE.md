@@ -347,7 +347,7 @@ data/index.json
 
 #### holiday.go
 
-从 GitHub（NateScarlet/holiday-cn）下载当年节假日 JSON，缓存到 `data/holiday/<year>.json`。使用 30s 超时的 HTTP 客户端防止网络异常卡死。
+构建期通过 `script/prepare_holiday.go` 获取当年节假日 JSON，并由 `holiday_embed.go` 内置到应用中。启动后默认优先把同年份内置数据写入 `data/holiday/<year>.json`；仅当内置数据缺失、年份不匹配、用户配置自定义数据源或强制刷新时，才通过 30s 超时的 HTTP 客户端远程下载。
 
 ---
 

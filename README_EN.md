@@ -104,7 +104,7 @@ Data directory layout:
 |---------|-------------|
 | **Auto-start** | Optionally launch at system startup |
 | **Log management** | Rotating log files with configurable max size and retention days |
-| **Holiday data** | Automatically downloads and updates annual holiday data for calendar overlays |
+| **Holiday data** | Uses embedded annual holiday data by default, with optional custom update source for calendar overlays |
 | **Quick actions** | One-click refresh and apply buttons in the main UI |
 | **Wallpaper info panel** | Displays the current wallpaper's title and copyright in the main UI |
 

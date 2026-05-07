@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "cd .. && go run ./script/prepare_holiday.go",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },

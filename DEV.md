@@ -135,7 +135,7 @@ BingPaperDesktop/
 
 - **`config.go`**：配置 JSON 的读写，包含自动迁移旧配置字段的逻辑；路径策略：便携标准自定义
 - **`index.go`**：`index.json` 维护壁纸历史列表，支持去重、按日期排序、按天数清理
-- **`holiday.go`**：从 GitHub 下载当年节假日 JSON 数据，缓存到本地
+- **`holiday.go` / `holiday_embed.go`**：优先使用构建期内置的当年节假日 JSON 写入本地缓存；内置年份缺失、年份不匹配或用户配置自定义数据源时再远程下载
 
 ### `internal/wallpaper/`  壁纸设置
 

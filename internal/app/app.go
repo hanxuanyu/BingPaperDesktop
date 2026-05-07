@@ -126,8 +126,8 @@ func (a *App) Startup(ctx context.Context) {
 	if cfg.EnableHoliday {
 		go func() {
 			year := time.Now().Year()
-			if err := store.CheckAndDownloadHoliday(year, false); err != nil {
-				slog.Error("Failed to check/download holiday data", "year", year, "error", err)
+			if err := store.EnsureHolidayWithConfig(year, cfg, false); err != nil {
+				slog.Error("Failed to ensure holiday data", "year", year, "error", err)
 			}
 		}()
 	}
